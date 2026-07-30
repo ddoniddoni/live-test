@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  VIEWER
+  ADMIN
+}
+
+enum LiveStatus {
+  READY
+  LIVE
+  ENDED
+}
+
+model User {
+  id        String     @id @default(cuid())
+  nickname  String
+  role      Role
+  createdAt DateTime   @default(now()) @map("created_at")
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+model LiveSession {
+  id                String          @id @default(cuid())
+  title             String
+  status            LiveStatus      @default(READY)
+  featuredProductId String?         @map("featured_product_id")
+  featuredProduct   Product?        @relation("FeaturedProduct", fields: [featuredProductId], references: [id], onDelete: SetNull)
+  startedAt         DateTime?       @map("started_at")
+  endedAt           DateTime?       @map("ended_at")
+  nextEventSequence Int             @default(1) @map("next_event_sequence")
+  realtimeEvents    RealtimeEvent[]
+  auditLogs         AuditLog[]
+
+  @@map("live_sessions")
+}
+
+model RealtimeEvent {
+  id          String      @id @default(cuid()) @map("event_id")
+  liveId      String      @map("live_id")
+  live        LiveSession @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  sequence    Int
+  type        String
+  payloadJson Json        @map("payload_json")
+  occurredAt  DateTime    @default(now()) @map("occurred_at")
+
+  @@unique([liveId, sequence])
+  @@map("realtime_events")
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  name            String
+  description     String
+  priceKrw        Int           @map("price_krw")
+  variants        ProductVariant[]
+  featuredInLives LiveSession[] @relation("FeaturedProduct")
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name      String
+  stock     Int
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  liveId     String      @map("live_id")
+  live       LiveSession @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  actorId    String      @map("actor_id")
+  actor      User        @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  action     String
+  entityType String      @map("entity_type")
+  entityId   String?     @map("entity_id")
+  beforeJson Json?       @map("before_json")
+  afterJson  Json?       @map("after_json")
+  reason     String?
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  @@index([liveId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
