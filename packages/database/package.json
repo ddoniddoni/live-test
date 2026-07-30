@@ -11,19 +11,16 @@
       "default": "./dist/index.js"
     }
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --passWithNoTests",
     "test:integration": "vitest run --passWithNoTests",
-    "db:generate": "prisma generate --schema prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
-    "db:migrate:reset": "prisma migrate reset --schema prisma/schema.prisma",
-    "db:seed": "prisma db seed --schema prisma/schema.prisma"
+    "db:generate": "node --env-file=../../.env ../../node_modules/prisma/build/index.js generate --schema prisma/schema.prisma",
+    "db:migrate": "node --env-file=../../.env ../../node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma",
+    "db:migrate:reset": "node --env-file=../../.env ../../node_modules/prisma/build/index.js migrate reset --schema prisma/schema.prisma",
+    "db:seed": "node --env-file=../../.env ../../node_modules/tsx/dist/cli.mjs prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.0.0"

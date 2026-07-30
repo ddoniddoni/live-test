@@ -1,10 +1,17 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { productFeaturedEventSchema, type LiveSnapshot } from '@liveflow/contracts';
+import { realtimeEventSchema, type ChatMessagePage, type LiveSnapshot } from '@liveflow/contracts';
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
-import { getSocketUrl, liveSnapshotQueryKey, mergeProductFeaturedEvent } from './live-api';
+import {
+  fetchChatMessages,
+  getSocketUrl,
+  liveSnapshotQueryKey,
+  mergeChatMessage,
+  mergeChatMessagePage,
+  mergeProductFeaturedEvent,
+} from './live-api';
 
 export type ConnectionState = 'CONNECTING' | 'CONNECTED' | 'RECOVERING' | 'DISCONNECTED' | 'FAILED';
 
@@ -24,15 +31,36 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
       autoConnect: false,
     });
 
+    const fetchRecoveryPages = async (afterSequence: number): Promise<ChatMessagePage[]> => {
+      const pages: ChatMessagePage[] = [];
+      let cursor = afterSequence;
+      let hasMore = true;
+
+      while (hasMore) {
+        const page = await fetchChatMessages(liveId, { afterSequence: cursor, limit: 200 });
+        pages.push(page);
+        const lastMessage = page.messages.at(-1);
+
+        if (!page.hasMore || !lastMessage || lastMessage.sequence <= cursor) {
+          return pages;
+        }
+
+        cursor = lastMessage.sequence;
+        hasMore = page.hasMore;
+      }
+
+      return pages;
+    };
+
     const handleConnect = () => {
       setConnectionState(hasConnected ? 'RECOVERING' : 'CONNECTING');
-      const lastEventSequence = queryClient.getQueryData<{ lastEventSequence: number }>(
-        queryKey,
-      )?.lastEventSequence;
+      const snapshot = queryClient.getQueryData<LiveSnapshot>(queryKey);
+      const lastEventSequence = snapshot?.lastEventSequence ?? 0;
+      const lastMessageSequence = snapshot?.chat.lastMessageSequence ?? 0;
 
       socket.emit(
         'live.join',
-        { liveId, lastEventSequence: lastEventSequence ?? 0 },
+        { liveId, lastEventSequence },
         (result: { ok: boolean; lastEventSequence?: number }) => {
           if (!result.ok) {
             setConnectionState('FAILED');
@@ -40,21 +68,55 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
           }
 
           hasConnected = true;
-          setConnectionState('CONNECTED');
-          void queryClient.invalidateQueries({ queryKey });
+          setConnectionState('RECOVERING');
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey }),
+            fetchRecoveryPages(lastMessageSequence),
+          ])
+            .then(([, pages]) => {
+              queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+                pages.reduce(
+                  (mergedSnapshot, page) => mergeChatMessagePage(mergedSnapshot, page),
+                  currentSnapshot,
+                ),
+              );
+              setConnectionState('CONNECTED');
+            })
+            .catch(() => {
+              setConnectionState('FAILED');
+            });
         },
       );
     };
 
     const handleLiveEvent = (input: unknown) => {
-      const event = productFeaturedEventSchema.safeParse(input);
+      const event = realtimeEventSchema.safeParse(input);
       if (!event.success || event.data.liveId !== liveId) {
         return;
       }
 
-      queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-        mergeProductFeaturedEvent(snapshot, event.data),
-      );
+      const liveEvent = event.data;
+
+      if (liveEvent.type === 'product.featured') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeProductFeaturedEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
+      const message = liveEvent.payload.message;
+      const eventSequence = liveEvent.sequence;
+
+      queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) => {
+        if (!snapshot || eventSequence <= snapshot.lastEventSequence) {
+          return snapshot;
+        }
+
+        const mergedSnapshot = mergeChatMessage(snapshot, message);
+        return mergedSnapshot
+          ? { ...mergedSnapshot, lastEventSequence: eventSequence }
+          : mergedSnapshot;
+      });
     };
 
     const handleDisconnect = () => {

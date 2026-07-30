@@ -1324,6 +1324,7 @@ NODE_ENV=development
 
 # Database — Supabase Dashboard의 Connect 화면에서 가져온 server-side connection string
 DATABASE_URL=postgresql://...
+DIRECT_URL=postgresql://...
 
 # Auth
 JWT_SECRET=replace-me
@@ -1382,7 +1383,7 @@ OPENAI_API_KEY=
 
 다음 항목은 bootstrap 또는 해당 phase에서 ADR로 확정한다.
 
-1. Node.js 정확한 LTS 버전
+1. Node.js 26.4.0 기준 runtime 유지 및 후속 LTS 전환 시점
 2. Prisma의 client 생성 위치와 serverless 연결 전략
 3. Socket 인증 token 저장·전달 방식
 4. event replay 보존 기간과 snapshot 기준

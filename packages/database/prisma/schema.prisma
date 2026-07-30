@@ -5,6 +5,9 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Supabase's session pooler keeps Prisma Migrate independent from the
+  // transaction pooler used by server runtime connections.
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {
@@ -18,12 +21,24 @@ enum LiveStatus {
   ENDED
 }
 
+enum ChatMessageType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum ChatMessageVisibility {
+  VISIBLE
+  HIDDEN
+}
+
 model User {
-  id        String     @id @default(cuid())
-  nickname  String
-  role      Role
-  createdAt DateTime   @default(now()) @map("created_at")
-  auditLogs AuditLog[]
+  id           String        @id @default(cuid())
+  nickname     String
+  role         Role
+  createdAt    DateTime      @default(now()) @map("created_at")
+  auditLogs    AuditLog[]
+  chatMessages ChatMessage[]
 
   @@map("users")
 }
@@ -39,8 +54,37 @@ model LiveSession {
   nextEventSequence Int             @default(1) @map("next_event_sequence")
   realtimeEvents    RealtimeEvent[]
   auditLogs         AuditLog[]
+  chatRoom          ChatRoom?
 
   @@map("live_sessions")
+}
+
+model ChatRoom {
+  id           String        @id @default(cuid())
+  liveId       String        @unique @map("live_id")
+  live         LiveSession   @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  nextSequence Int           @default(1) @map("next_sequence")
+  messages     ChatMessage[]
+
+  @@map("chat_rooms")
+}
+
+model ChatMessage {
+  id              String                @id @default(cuid())
+  roomId          String                @map("room_id")
+  room            ChatRoom              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  senderId        String                @map("sender_id")
+  sender          User                  @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  clientMessageId String                @map("client_message_id")
+  sequence        Int
+  type            ChatMessageType
+  visibility      ChatMessageVisibility @default(VISIBLE)
+  content         String                @db.VarChar(500)
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  @@unique([senderId, clientMessageId])
+  @@unique([roomId, sequence])
+  @@map("chat_messages")
 }
 
 model RealtimeEvent {

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { LiveSnapshot } from '@liveflow/contracts';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
+import { ChatPanel } from '../../../../components/chat-panel';
 import {
   ApiRequestError,
   createAdminSession,
@@ -133,6 +134,17 @@ export function AdminRoom({ liveId }: { liveId: string }) {
           </form>
         </section>
       ) : null}
+
+      <ChatPanel
+        accessToken={accessToken}
+        currentUser={
+          accessToken ? { id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' } : null
+        }
+        liveId={liveId}
+        messages={snapshot.chat.messages}
+        sessionError={loginError}
+        variant="admin"
+      />
 
       <section className="product-control" aria-labelledby="product-control-heading">
         <div className="section-heading">

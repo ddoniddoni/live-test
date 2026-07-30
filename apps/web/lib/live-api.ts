@@ -1,9 +1,13 @@
 import {
   apiErrorSchema,
+  chatMessagePageSchema,
+  chatMessageSchema,
   demoSessionResponseSchema,
   liveSnapshotSchema,
   productFeaturedEventSchema,
   type ApiErrorResponse,
+  type ChatMessage,
+  type ChatMessagePage,
   type LiveSnapshot,
   type ProductFeaturedEvent,
 } from '@liveflow/contracts';
@@ -88,6 +92,54 @@ export async function featureProduct(
   return productFeaturedEventSchema.parse(body);
 }
 
+export async function fetchChatMessages(
+  liveId: string,
+  query: {
+    limit?: number;
+    beforeSequence?: number;
+    afterSequence?: number;
+  } = {},
+): Promise<ChatMessagePage> {
+  const searchParams = new URLSearchParams();
+
+  if (query.limit !== undefined) {
+    searchParams.set('limit', String(query.limit));
+  }
+  if (query.beforeSequence !== undefined) {
+    searchParams.set('beforeSequence', String(query.beforeSequence));
+  }
+  if (query.afterSequence !== undefined) {
+    searchParams.set('afterSequence', String(query.afterSequence));
+  }
+
+  const queryString = searchParams.size > 0 ? `?${searchParams.toString()}` : '';
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/lives/${liveId}/messages${queryString}`)),
+  );
+  return chatMessagePageSchema.parse(body);
+}
+
+export async function createChatMessage(
+  liveId: string,
+  input: {
+    clientMessageId: string;
+    content: string;
+  },
+  accessToken: string,
+): Promise<ChatMessage> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/lives/${liveId}/messages`), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+  return chatMessageSchema.parse(body);
+}
+
 export function mergeProductFeaturedEvent(
   snapshot: LiveSnapshot | undefined,
   event: ProductFeaturedEvent,
@@ -100,5 +152,54 @@ export function mergeProductFeaturedEvent(
     ...snapshot,
     featuredProduct: event.payload.product,
     lastEventSequence: event.sequence,
+  };
+}
+
+function mergeChatMessages(
+  messages: ChatMessage[],
+  incomingMessages: ChatMessage[],
+): ChatMessage[] {
+  const messagesByClientId = new Map(messages.map((message) => [message.clientMessageId, message]));
+
+  for (const message of incomingMessages) {
+    messagesByClientId.set(message.clientMessageId, message);
+  }
+
+  return [...messagesByClientId.values()].toSorted((left, right) => left.sequence - right.sequence);
+}
+
+export function mergeChatMessage(
+  snapshot: LiveSnapshot | undefined,
+  message: ChatMessage,
+): LiveSnapshot | undefined {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    chat: {
+      messages: mergeChatMessages(snapshot.chat.messages, [message]),
+      lastMessageSequence: Math.max(snapshot.chat.lastMessageSequence, message.sequence),
+      hasMore: snapshot.chat.hasMore,
+    },
+  };
+}
+
+export function mergeChatMessagePage(
+  snapshot: LiveSnapshot | undefined,
+  page: ChatMessagePage,
+): LiveSnapshot | undefined {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    chat: {
+      messages: mergeChatMessages(snapshot.chat.messages, page.messages),
+      lastMessageSequence: Math.max(snapshot.chat.lastMessageSequence, page.lastMessageSequence),
+      hasMore: snapshot.chat.hasMore || page.hasMore,
+    },
   };
 }

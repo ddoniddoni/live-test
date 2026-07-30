@@ -15,7 +15,7 @@ packages/database        Prisma 스키마와 데이터베이스 클라이언트
 
 ## 시작하기
 
-Node.js 24.18.1 LTS와 npm 11 이상을 사용합니다. 현재 개발 셸이 다른 Node 버전이면 `nvm use`
+Node.js 26.4.0과 npm 11 이상을 사용합니다. 현재 개발 셸이 다른 Node 버전이면 `nvm use`
 후 다음을 실행합니다.
 
 ```bash
@@ -28,9 +28,14 @@ npm run dev
 ```
 
 시작 전에 Supabase development project를 만들고, Dashboard의 **Connect** 화면에서 가져온 서버용
-PostgreSQL connection string을 `.env`의 `DATABASE_URL`에 설정합니다. 현재 애플리케이션은
-Fastify + Prisma만 DB에 연결하므로 Supabase Data API를 켜거나 브라우저에 Supabase secret을 넣지
-않습니다. Docker Compose는 로컬 PostgreSQL이 꼭 필요한 경우에만 쓰는 선택 사항입니다.
+connection string 두 개를 `.env`에 설정합니다.
+
+- `DATABASE_URL`: Fastify 런타임용 Transaction Pooler URL (보통 6543 포트, `pgbouncer=true`)
+- `DIRECT_URL`: Prisma migration용 Session Pooler URL (보통 5432 포트)
+
+현재 애플리케이션은 Fastify + Prisma만 DB에 연결하므로 Supabase Data API를 켜거나 브라우저에
+Supabase secret을 넣지 않습니다. `npm run db:migrate`와 `npm run db:seed`는 루트 `.env`를
+자동으로 로드합니다. Docker Compose는 로컬 PostgreSQL이 꼭 필요한 경우에만 쓰는 선택 사항입니다.
 
 - Web: `http://localhost:3000`
 - API health check: `http://localhost:4000/health`

@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { ChatPanel } from '../../../components/chat-panel';
 import {
   ApiRequestError,
   createViewerSession,
@@ -101,11 +102,16 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           <div className="stage-orb stage-orb-two" aria-hidden="true" />
         </div>
 
-        <aside className="chat-placeholder" aria-label="실시간 채팅 준비 중">
-          <p className="panel-kicker">LIVE CHAT</p>
-          <h2>채팅은 다음 흐름에서 연결됩니다</h2>
-          <p>지금은 운영자의 상품 변경이 이 화면에 실시간 반영되는지 확인할 수 있습니다.</p>
-        </aside>
+        <ChatPanel
+          accessToken={accessToken}
+          currentUser={
+            accessToken ? { id: 'demo-viewer', nickname: 'Demo Viewer', role: 'VIEWER' } : null
+          }
+          liveId={liveId}
+          messages={snapshotQuery.data.chat.messages}
+          sessionError={sessionError}
+          variant="viewer"
+        />
       </section>
 
       <section className="connection-row" aria-live="polite">

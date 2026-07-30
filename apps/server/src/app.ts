@@ -2,6 +2,10 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import {
+  chatMessagePageSchema,
+  chatMessagesQuerySchema,
+  chatMessageSchema,
+  createChatMessageRequestSchema,
   demoAdminSessionRequestSchema,
   demoSessionResponseSchema,
   featureProductRequestSchema,
@@ -110,15 +114,29 @@ async function requireAdmin(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<DemoAccessToken | null> {
-  try {
-    await request.jwtVerify();
-  } catch {
-    sendApiError(request, reply, 401, 'UNAUTHENTICATED', '관리자 세션이 필요합니다.');
+  const session = await requireSession(request, reply, '관리자 세션이 필요합니다.');
+
+  if (!session) {
     return null;
   }
 
-  if (request.user.role !== 'ADMIN') {
+  if (session.role !== 'ADMIN') {
     sendApiError(request, reply, 403, 'FORBIDDEN', '관리자 권한이 필요합니다.');
+    return null;
+  }
+
+  return session;
+}
+
+async function requireSession(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  message: string,
+): Promise<DemoAccessToken | null> {
+  try {
+    await request.jwtVerify();
+  } catch {
+    sendApiError(request, reply, 401, 'UNAUTHENTICATED', message);
     return null;
   }
 
@@ -293,6 +311,100 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 
     return liveSnapshotSchema.parse(snapshot);
   });
+
+  app.get('/api/v1/lives/:liveId/messages', async (request, reply) => {
+    const parsedParams = liveParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      return sendApiError(request, reply, 400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedQuery = chatMessagesQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return sendApiError(
+        request,
+        reply,
+        400,
+        'VALIDATION_ERROR',
+        '메시지 조회 조건이 올바르지 않습니다.',
+      );
+    }
+
+    const page = await liveRepository.getMessages(parsedParams.data.liveId, parsedQuery.data);
+    if (!page) {
+      return sendApiError(request, reply, 404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return chatMessagePageSchema.parse(page);
+  });
+
+  app.post(
+    '/api/v1/lives/:liveId/messages',
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '10 seconds',
+        },
+      },
+    },
+    async (request, reply) => {
+      const session = await requireSession(request, reply, '채팅 세션이 필요합니다.');
+      if (!session) {
+        return reply;
+      }
+
+      const parsedParams = liveParamsSchema.safeParse(request.params);
+      if (!parsedParams.success) {
+        return sendApiError(
+          request,
+          reply,
+          400,
+          'VALIDATION_ERROR',
+          '방송 ID가 올바르지 않습니다.',
+        );
+      }
+
+      const parsedBody = createChatMessageRequestSchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return sendApiError(
+          request,
+          reply,
+          400,
+          'VALIDATION_ERROR',
+          '메시지 내용을 확인해 주세요.',
+        );
+      }
+
+      const result = await liveRepository.createMessage({
+        liveId: parsedParams.data.liveId,
+        senderId: session.userId,
+        senderRole: session.role,
+        clientMessageId: parsedBody.data.clientMessageId,
+        content: parsedBody.data.content,
+      });
+
+      if (result.kind === 'live_not_found') {
+        return sendApiError(request, reply, 404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+      }
+
+      if (result.kind === 'live_not_accepting_chat') {
+        return sendApiError(
+          request,
+          reply,
+          409,
+          'LIVE_NOT_ACCEPTING_CHAT',
+          '현재 방송에서는 채팅을 보낼 수 없습니다.',
+        );
+      }
+
+      if (result.kind === 'created') {
+        publishRealtimeEvent(result.event);
+        return chatMessageSchema.parse(result.event.payload.message);
+      }
+
+      return chatMessageSchema.parse(result.message);
+    },
+  );
 
   app.put('/api/v1/admin/lives/:liveId/featured-product', async (request, reply) => {
     const session = await requireAdmin(request, reply);

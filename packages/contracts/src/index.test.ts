@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  chatMessagesQuerySchema,
+  createChatMessageRequestSchema,
   healthResponseSchema,
   liveSnapshotSchema,
   productFeaturedEventSchema,
@@ -43,8 +45,31 @@ describe('shared contracts', () => {
         },
         products: [],
         lastEventSequence: 4,
+        chat: {
+          messages: [],
+          lastMessageSequence: 0,
+          hasMore: false,
+        },
       }).success,
     ).toBe(true);
+  });
+
+  it('validates idempotent chat writes and exclusive cursor directions', () => {
+    expect(
+      createChatMessageRequestSchema.safeParse({
+        clientMessageId: '9e3df3e8-7374-4d7a-8b2d-152b655c7d6f',
+        content: '상품 사이즈가 궁금합니다.',
+      }).success,
+    ).toBe(true);
+    expect(
+      createChatMessageRequestSchema.safeParse({
+        clientMessageId: 'not-a-uuid',
+        content: ' ',
+      }).success,
+    ).toBe(false);
+    expect(
+      chatMessagesQuerySchema.safeParse({ beforeSequence: '10', afterSequence: '2' }).success,
+    ).toBe(false);
   });
 
   it('rejects malformed product featured events', () => {

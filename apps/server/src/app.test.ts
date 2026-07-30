@@ -1,4 +1,9 @@
-import type { LiveSnapshot, ProductFeaturedEvent } from '@liveflow/contracts';
+import type {
+  ChatMessage,
+  ChatMessageCreatedEvent,
+  LiveSnapshot,
+  ProductFeaturedEvent,
+} from '@liveflow/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildServer } from './app.js';
 import type { LiveRepository } from './live-repository.js';
@@ -24,6 +29,37 @@ const demoSnapshot: LiveSnapshot = {
     },
   ],
   lastEventSequence: 0,
+  chat: {
+    messages: [],
+    lastMessageSequence: 0,
+    hasMore: false,
+  },
+};
+
+const demoChatMessage: ChatMessage = {
+  id: 'message-1',
+  clientMessageId: '9e3df3e8-7374-4d7a-8b2d-152b655c7d6f',
+  roomId: 'demo-chat',
+  liveId: 'demo',
+  sender: {
+    id: 'demo-viewer',
+    nickname: 'Demo Viewer',
+    role: 'VIEWER',
+  },
+  sequence: 1,
+  type: 'USER',
+  visibility: 'VISIBLE',
+  content: '상품 사이즈가 궁금합니다.',
+  createdAt: '2026-07-31T00:00:01.000Z',
+};
+
+const chatMessageCreatedEvent: ChatMessageCreatedEvent = {
+  eventId: 'chat-event-1',
+  liveId: 'demo',
+  sequence: 1,
+  type: 'chat.message.created',
+  occurredAt: '2026-07-31T00:00:01.000Z',
+  payload: { message: demoChatMessage },
 };
 
 const featuredProductEvent: ProductFeaturedEvent = {
@@ -37,13 +73,19 @@ const featuredProductEvent: ProductFeaturedEvent = {
   },
 };
 
-function createLiveRepository(): LiveRepository {
+function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepository {
   return {
     getSnapshot: vi.fn(async (liveId: string) => (liveId === 'demo' ? demoSnapshot : null)),
+    getMessages: vi.fn(async (liveId: string) => (liveId === 'demo' ? demoSnapshot.chat : null)),
+    createMessage: vi.fn(async () => ({
+      kind: 'created',
+      event: chatMessageCreatedEvent,
+    })),
     featureProduct: vi.fn(async () => ({
       kind: 'featured',
       event: featuredProductEvent,
     })),
+    ...overrides,
   };
 }
 
@@ -149,5 +191,66 @@ describe('live product routes', () => {
       actorId: 'demo-admin',
     });
     expect(publishRealtimeEvent).toHaveBeenCalledWith(featuredProductEvent);
+  });
+});
+
+describe('chat routes', () => {
+  it('returns cursor-based messages and rejects unauthenticated writes', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+
+    const messagesResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/lives/demo/messages?afterSequence=0&limit=50',
+    });
+    const deniedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/lives/demo/messages',
+      payload: {
+        clientMessageId: demoChatMessage.clientMessageId,
+        content: demoChatMessage.content,
+      },
+    });
+
+    expect(messagesResponse.statusCode).toBe(200);
+    expect(messagesResponse.json()).toMatchObject({
+      lastMessageSequence: 0,
+      hasMore: false,
+    });
+    expect(deniedResponse.statusCode).toBe(401);
+    expect(liveRepository.createMessage).not.toHaveBeenCalled();
+  });
+
+  it('publishes only a newly persisted message, not an idempotent retry', async () => {
+    const createMessage = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'created', event: chatMessageCreatedEvent })
+      .mockResolvedValueOnce({ kind: 'idempotent', message: demoChatMessage });
+    const liveRepository = createLiveRepository({ createMessage });
+    const publishRealtimeEvent = vi.fn();
+    const app = await buildServer({ liveRepository, publishRealtimeEvent });
+    servers.push(app);
+    const viewerToken = app.jwt.sign({ userId: 'demo-viewer', role: 'VIEWER' });
+    const request = {
+      method: 'POST' as const,
+      url: '/api/v1/lives/demo/messages',
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: {
+        clientMessageId: demoChatMessage.clientMessageId,
+        content: demoChatMessage.content,
+      },
+    };
+
+    const createdResponse = await app.inject(request);
+    const retriedResponse = await app.inject(request);
+
+    expect(createdResponse.statusCode).toBe(200);
+    expect(retriedResponse.statusCode).toBe(200);
+    expect(createdResponse.json()).toMatchObject({ id: demoChatMessage.id });
+    expect(retriedResponse.json()).toMatchObject({ id: demoChatMessage.id });
+    expect(createMessage).toHaveBeenCalledTimes(2);
+    expect(publishRealtimeEvent).toHaveBeenCalledTimes(1);
+    expect(publishRealtimeEvent).toHaveBeenCalledWith(chatMessageCreatedEvent);
   });
 });

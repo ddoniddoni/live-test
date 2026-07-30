@@ -434,6 +434,7 @@ README에는 실행법을, PRD에는 제품 범위를, ADR에는 기술 선택 �
 
 ```env
 DATABASE_URL=
+DIRECT_URL=
 JWT_SECRET=
 WEB_ORIGIN=http://localhost:3000
 NEXT_PUBLIC_API_URL=http://localhost:4000
@@ -445,7 +446,7 @@ OPENAI_API_KEY=
 - `.env`, 실제 secret, provider token을 커밋하지 않는다.
 - `.env.example`에는 값이 아닌 설명 가능한 placeholder만 둔다.
 - 웹은 Vercel, API/Socket 서버는 Render 계열 Web Service, DB는 Supabase managed PostgreSQL을 1차 배포 대상으로 삼는다.
-- 로컬 Docker PostgreSQL은 필수가 아니다. 개발자는 별도 Supabase development project의 `DATABASE_URL`을 사용하며, connection string은 Supabase Dashboard의 Connect 화면에서만 가져온다.
+- 로컬 Docker PostgreSQL은 필수가 아니다. 개발자는 별도 Supabase development project의 `DATABASE_URL`(앱용 Transaction Pooler)과 `DIRECT_URL`(migration용 Session Pooler)을 사용하며, connection string은 Supabase Dashboard의 Connect 화면에서만 가져온다.
 - 배포 서비스와 free-tier 조건은 변경될 수 있으므로 실제 배포 작업 시 공식 문서를 다시 확인한다.
 - domain layer는 특정 배포 provider에 종속시키지 않는다.
 - 단일 Socket 서버 인스턴스가 MVP 기준이다.

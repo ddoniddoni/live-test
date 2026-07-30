@@ -39,7 +39,7 @@ LiveFlow는 PostgreSQL transaction, Prisma migration, Socket.IO 기반의 실시
 
 ## 검증 방법
 
-1. Supabase development project의 서버용 `DATABASE_URL`을 로컬과 API 배포 환경에 설정한다.
+1. Supabase development project의 서버 런타임용 `DATABASE_URL`과 migration용 `DIRECT_URL`을 로컬과 API 배포 환경에 설정한다.
 2. `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`를 실행한다.
 3. `/health`와 viewer/admin 실시간 흐름을 두 browser context에서 확인한다.
 4. Data API 또는 browser direct access를 도입하기 전 Security Advisor와 RLS 허용·거부 테스트를

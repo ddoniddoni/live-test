@@ -1,10 +1,12 @@
-import { LiveStatus, PrismaClient, Role } from '@prisma/client';
+import { ChatMessageType, LiveStatus, PrismaClient, Role } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
   await prisma.auditLog.deleteMany();
   await prisma.realtimeEvent.deleteMany();
+  await prisma.chatMessage.deleteMany();
+  await prisma.chatRoom.deleteMany();
   await prisma.liveSession.deleteMany();
   await prisma.productVariant.deleteMany();
   await prisma.product.deleteMany();
@@ -18,7 +20,7 @@ async function main(): Promise<void> {
     },
   });
 
-  await prisma.user.create({
+  const viewer = await prisma.user.create({
     data: {
       id: 'demo-viewer',
       nickname: 'Demo Viewer',
@@ -78,6 +80,40 @@ async function main(): Promise<void> {
       title: 'LiveFlow 데모 방송',
       status: LiveStatus.LIVE,
       startedAt: new Date('2026-07-31T00:00:00.000Z'),
+      chatRoom: {
+        create: {
+          id: 'demo-chat',
+          nextSequence: 4,
+          messages: {
+            create: [
+              {
+                id: 'demo-message-1',
+                senderId: admin.id,
+                clientMessageId: '00000000-0000-4000-8000-000000000001',
+                sequence: 1,
+                type: ChatMessageType.ADMIN,
+                content: '안녕하세요! 오늘 소개 상품에 대해 편하게 질문해 주세요.',
+              },
+              {
+                id: 'demo-message-2',
+                senderId: viewer.id,
+                clientMessageId: '00000000-0000-4000-8000-000000000002',
+                sequence: 2,
+                type: ChatMessageType.USER,
+                content: '니트는 어떤 계절에 입기 좋은가요?',
+              },
+              {
+                id: 'demo-message-3',
+                senderId: admin.id,
+                clientMessageId: '00000000-0000-4000-8000-000000000003',
+                sequence: 3,
+                type: ChatMessageType.ADMIN,
+                content: '가벼운 여름 원사라 실내 냉방이나 초가을까지 활용하기 좋습니다.',
+              },
+            ],
+          },
+        },
+      },
     },
   });
 
