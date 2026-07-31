@@ -32,13 +32,33 @@ enum ChatMessageVisibility {
   HIDDEN
 }
 
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+enum CouponStatus {
+  PUBLISHED
+  DISABLED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
 model User {
-  id           String        @id @default(cuid())
-  nickname     String
-  role         Role
-  createdAt    DateTime      @default(now()) @map("created_at")
-  auditLogs    AuditLog[]
-  chatMessages ChatMessage[]
+  id                 String        @id @default(cuid())
+  nickname           String
+  role               Role
+  createdAt          DateTime      @default(now()) @map("created_at")
+  auditLogs          AuditLog[]
+  chatMessages       ChatMessage[]
+  chatTimeouts       ChatTimeout[] @relation("ChatTimeoutTarget")
+  issuedChatTimeouts ChatTimeout[] @relation("ChatTimeoutActor")
+  orders            Order[]
 
   @@map("users")
 }
@@ -55,6 +75,9 @@ model LiveSession {
   realtimeEvents    RealtimeEvent[]
   auditLogs         AuditLog[]
   chatRoom          ChatRoom?
+  chatTimeouts      ChatTimeout[]
+  coupons           Coupon[]
+  orders            Order[]
 
   @@map("live_sessions")
 }
@@ -87,6 +110,41 @@ model ChatMessage {
   @@map("chat_messages")
 }
 
+model ChatTimeout {
+  id        String      @id @default(cuid())
+  liveId    String      @map("live_id")
+  live      LiveSession @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  userId    String      @map("user_id")
+  user      User        @relation("ChatTimeoutTarget", fields: [userId], references: [id], onDelete: Restrict)
+  actorId   String      @map("actor_id")
+  actor     User        @relation("ChatTimeoutActor", fields: [actorId], references: [id], onDelete: Restrict)
+  reason    String      @db.VarChar(300)
+  expiresAt DateTime    @map("expires_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@index([liveId, userId, expiresAt])
+  @@map("chat_timeouts")
+}
+
+model Coupon {
+  id                String       @id @default(cuid())
+  liveId            String       @map("live_id")
+  live              LiveSession  @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  type              CouponType
+  value             Int
+  minOrderAmountKrw Int          @default(0) @map("min_order_amount_krw")
+  startsAt          DateTime     @map("starts_at")
+  endsAt            DateTime     @map("ends_at")
+  usageLimit        Int?         @map("usage_limit")
+  usedCount         Int          @default(0) @map("used_count")
+  status            CouponStatus @default(PUBLISHED)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  orders            Order[]
+
+  @@index([liveId, status, startsAt, endsAt])
+  @@map("coupons")
+}
+
 model RealtimeEvent {
   id          String      @id @default(cuid()) @map("event_id")
   liveId      String      @map("live_id")
@@ -117,9 +175,50 @@ model ProductVariant {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   name      String
   stock     Int
+  orderItems OrderItem[]
 
   @@index([productId])
   @@map("product_variants")
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  liveId         String      @map("live_id")
+  live           LiveSession @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  userId         String      @map("user_id")
+  user           User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  couponId       String?     @map("coupon_id")
+  coupon         Coupon?     @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  idempotencyKey String      @map("idempotency_key")
+  status         OrderStatus @default(PENDING)
+  subtotalKrw    Int         @map("subtotal_krw")
+  discountKrw    Int         @map("discount_krw")
+  totalKrw       Int         @map("total_krw")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  items          OrderItem[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([liveId, createdAt])
+  @@index([userId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String         @id @default(cuid())
+  orderId          String         @map("order_id")
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariantId String         @map("product_variant_id")
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  productId        String         @map("product_id")
+  productName      String         @map("product_name")
+  variantName      String         @map("variant_name")
+  quantity         Int
+  unitPriceKrw     Int            @map("unit_price_krw")
+
+  @@index([orderId])
+  @@index([productVariantId])
+  @@map("order_items")
 }
 
 model AuditLog {

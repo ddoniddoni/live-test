@@ -1,21 +1,21 @@
 # LiveFlow
 
 LiveFlow는 사용자 라이브 쇼핑 화면과 운영자 컨트롤룸을 실시간으로 연결하는 AI 기반
-라이브커머스 포트폴리오 프로젝트입니다. 현재는 Bootstrap 위에 첫 번째 실시간 세로 흐름인
-**운영자 상품 노출 → DB 저장·감사 로그 → Socket.IO 발행 → 시청자 즉시 반영**을 구현했습니다.
+라이브커머스 포트폴리오 프로젝트입니다. 현재는 상품 노출, 신뢰성 있는 채팅, Mock 주문과 재고 차감의
+세로 흐름을 구현했습니다.
 
 ## Workspace
 
 ```text
 apps/web                 Next.js 사용자·운영자 웹 앱
-apps/server              Fastify REST API + Socket.IO 서버
+apps/server              NestJS REST API + Socket.IO Gateway 서버 (Fastify adapter)
 packages/contracts       Zod 기반 공유 DTO와 API 계약
 packages/database        Prisma 스키마와 데이터베이스 클라이언트
 ```
 
 ## 시작하기
 
-Node.js 26.4.0과 npm 11 이상을 사용합니다. 현재 개발 셸이 다른 Node 버전이면 `nvm use`
+Node.js 24.14.1 LTS와 npm 11 이상을 사용합니다. 현재 개발 셸이 다른 Node 버전이면 `nvm use`
 후 다음을 실행합니다.
 
 ```bash
@@ -30,17 +30,17 @@ npm run dev
 시작 전에 Supabase development project를 만들고, Dashboard의 **Connect** 화면에서 가져온 서버용
 connection string 두 개를 `.env`에 설정합니다.
 
-- `DATABASE_URL`: Fastify 런타임용 Transaction Pooler URL (보통 6543 포트, `pgbouncer=true`)
+- `DATABASE_URL`: NestJS 런타임용 Transaction Pooler URL (보통 6543 포트, `pgbouncer=true`)
 - `DIRECT_URL`: Prisma migration용 Session Pooler URL (보통 5432 포트)
 
-현재 애플리케이션은 Fastify + Prisma만 DB에 연결하므로 Supabase Data API를 켜거나 브라우저에
+현재 애플리케이션은 NestJS + Prisma만 DB에 연결하므로 Supabase Data API를 켜거나 브라우저에
 Supabase secret을 넣지 않습니다. `npm run db:migrate`와 `npm run db:seed`는 루트 `.env`를
 자동으로 로드합니다. Docker Compose는 로컬 PostgreSQL이 꼭 필요한 경우에만 쓰는 선택 사항입니다.
 
 - Web: `http://localhost:3000`
 - API health check: `http://localhost:4000/health`
 
-`npm run dev`는 Next.js와 Fastify를 함께 시작합니다. 분리 실행은 `npm run dev:web`,
+`npm run dev`는 Next.js와 NestJS를 함께 시작합니다. 분리 실행은 `npm run dev:web`,
 `npm run dev:server`를 사용합니다.
 
 `DEMO_ADMIN_PASSWORD`에는 임의의 강한 비밀번호를 설정하세요. `/admin/lives/demo`에서 해당
@@ -79,7 +79,69 @@ npm run db:seed
    시청자 화면의 Query cache가 갱신됩니다.
 5. 재접속·새로고침 시 HTTP snapshot이 DB의 최신 소개 상품을 다시 읽습니다.
 
-채팅, 쿠폰, 주문·재고 차감, 실제 사용자 인증, AI 기능과 누락 이벤트의 cursor 복구는 아직
-구현하지 않았습니다. 이 기능들은 PRD의 후속 세로 흐름으로 추가합니다.
+채팅은 최근 메시지 조회, HTTP 저장, `clientMessageId` idempotency, optimistic 상태, Socket.IO 전파,
+HTTP/Socket dedupe, `afterSequence` 복구까지 구현했습니다. 관리자는 사유를 입력해 메시지를 숨기거나
+시청자를 5·10·30·60분 동안 채팅 제한할 수 있습니다. timeout은 방송 단위로 영속화·감사되며, 대상
+시청자에게만 Socket.IO 이벤트로 전달됩니다. 메시지 전송 API도 제한 만료 전에는 거절하므로 UI를 우회할 수
+없습니다. 이전 메시지 UI, cursor 기반 이전 메시지 조회, 읽던 위치 보존, 대량 목록 virtualization, 최신 위치가
+아닐 때의 새 메시지 이동 버튼까지 구현했습니다. 관리자는 퍼센트·정액 쿠폰을 유효 기간, 최소 주문 금액, 사용 한도와 함께 발행할 수 있고, 발행된 쿠폰은 시청자 화면에 실시간 반영됩니다. 시청자는 현재 소개 중인 상품의 옵션과 수량을 선택해 Mock 주문을 만들 수 있습니다. 서버는 가격·쿠폰을 재계산하고, 조건부 재고 차감·쿠폰 사용·주문·감사 로그를 하나의 transaction으로 저장한 뒤 public 재고 이벤트와 주문자 전용 상태 이벤트를 발행합니다. 같은 `Idempotency-Key` 재시도는 주문을 한 번만 만듭니다. 실제 결제와 실제 사용자 인증, AI 기능은 후속 범위입니다.
+
+## 포트폴리오 배포
+
+```text
+Vercel (apps/web, Next.js)
+  ├─ HTTPS API ─┐
+  └─ Socket.IO ─┼─ Render Web Service (NestJS + Fastify adapter)
+                └─ Supabase PostgreSQL (Prisma)
+```
+
+### 1. Supabase
+
+Supabase Dashboard의 Connect 화면에서 서버용 `DATABASE_URL`(Transaction Pooler)과 migration용
+`DIRECT_URL`(Session Pooler)을 준비합니다. 첫 공개 배포 전에는 로컬에서 다음을 한 번 실행합니다.
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+배포 환경에서는 Render의 pre-deploy 단계가 `npm run db:migrate`를 실행합니다. 이 명령은 로컬의
+`.env`가 있으면 읽고, 없으면 Render 환경변수를 그대로 사용합니다. 서버 시작 시 migration이나
+seed를 실행하지 않습니다.
+
+### 2. Render API와 Socket
+
+저장소 루트의 [`render.yaml`](./render.yaml)을 이용해 Render에서 **New + Blueprint**를 만들고
+`develop` 브랜치를 연결합니다. 이 Blueprint는 무료 Web Service 한 대에 NestJS API와 Socket.IO를
+같이 기동하며 `/health`를 배포 health check로 사용합니다.
+
+Render Dashboard에서 아래 값을 설정합니다. `JWT_SECRET`은 Blueprint가 최초 생성 시 안전한 난수로
+만들며, 나머지 실제 값은 저장소에 넣지 않습니다.
+
+```text
+DATABASE_URL, DIRECT_URL, DEMO_ADMIN_PASSWORD, WEB_ORIGIN
+```
+
+`WEB_ORIGIN`에는 다음 단계에서 얻은 Vercel production URL을 넣습니다. Render의 공개 URL은 예를 들어
+`https://liveflow-api.onrender.com`이며 API와 Socket.IO가 이 URL을 함께 사용합니다. Free Web Service는
+15분 동안 HTTP 요청과 Socket 메시지가 없으면 sleep하므로, 포트폴리오 시연 전에는 `/health`를 한 번
+열어 cold start를 끝냅니다.
+
+### 3. Vercel 웹
+
+같은 저장소에서 Vercel Project를 만들고, Root Directory는 **저장소 루트**로 둡니다.
+[`vercel.json`](./vercel.json)이 npm workspace install과 web-only build를 설정합니다. Vercel 환경변수는
+다음처럼 설정합니다.
+
+```text
+NEXT_PUBLIC_API_URL=https://liveflow-api.onrender.com
+NEXT_PUBLIC_SOCKET_URL=https://liveflow-api.onrender.com
+```
+
+Vercel 배포 URL을 만든 뒤 이를 Render의 `WEB_ORIGIN`에 넣고 Render를 재배포합니다. Preview URL은
+allowlist에 자동 포함되지 않으므로, 공개 시연은 production URL을 사용합니다.
+
+API와 Socket은 Render 단일 인스턴스가 기준입니다. 인스턴스를 여러 대로 확장하려면 Socket.IO Redis
+adapter를 먼저 도입해야 합니다.
 
 요구사항과 작업 규칙의 기준은 [prd.md](./prd.md)와 [AGENTS.md](./AGENTS.md)입니다.

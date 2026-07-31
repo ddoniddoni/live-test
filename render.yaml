@@ -1,0 +1,30 @@
+services:
+  - type: web
+    runtime: node
+    name: liveflow-api
+    plan: free
+    branch: develop
+    buildCommand: npm ci && npm run build --workspace=@liveflow/contracts && npm run build --workspace=@liveflow/database && npm run build --workspace=@liveflow/server
+    preDeployCommand: npm run db:migrate
+    startCommand: npm run start --workspace=@liveflow/server
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DEMO_MODE
+        value: 'true'
+      - key: DEMO_ADMIN_PASSWORD
+        sync: false
+      - key: WEB_ORIGIN
+        sync: false
+      - key: AI_MODE
+        value: mock

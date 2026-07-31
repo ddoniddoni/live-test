@@ -64,7 +64,7 @@ LiveFlow는 다음 두 화면이 하나의 실시간 비즈니스 흐름으로 �
 liveflow/
 ├─ apps/
 │  ├─ web/                 # Next.js 사용자 화면 + 어드민 화면
-│  └─ server/              # Fastify REST API + Socket.IO 서버
+│  └─ server/              # NestJS REST API + Socket.IO Gateway 서버
 ├─ packages/
 │  ├─ contracts/           # Zod 스키마, API/Socket 공유 계약, DTO
 │  └─ database/            # Prisma 스키마, migration, seed, DB client
@@ -90,7 +90,7 @@ liveflow/
 정확한 버전은 bootstrap 시 lockfile로 고정한다.
 
 - Web: Next.js App Router, React, TypeScript
-- Server: Node.js, Fastify, Socket.IO
+- Server: Node.js, NestJS, Fastify adapter, Socket.IO
 - Validation/Contract: Zod
 - Database: Supabase managed PostgreSQL, Prisma ORM
 - Server state: TanStack Query
@@ -261,7 +261,7 @@ interface RealtimeEvent<TPayload> {
 - unique, foreign key, check constraint, transaction을 적극 사용한다.
 - migration 변경 시 빈 DB에 처음부터 재적용하는 검증을 수행한다.
 - Supabase는 개발·배포용 관리형 PostgreSQL의 기본 provider다. Docker PostgreSQL은 선택적인 로컬 대체 수단이며 작업·실행의 필수 조건이 아니다.
-- 현재 DB 접근은 Fastify 서버와 Prisma를 통해서만 수행한다. Supabase Data API를 사용하지 않는 동안에는 Data API를 비활성화하고, 브라우저에서 DB를 직접 호출하지 않는다.
+- 현재 DB 접근은 NestJS 서버와 Prisma를 통해서만 수행한다. Supabase Data API를 사용하지 않는 동안에는 Data API를 비활성화하고, 브라우저에서 DB를 직접 호출하지 않는다.
 - 향후 Data API, Supabase Auth, Realtime을 도입해 테이블을 client에 노출하면 해당 테이블의 RLS와 허용·거부 정책 테스트를 같은 변경에 포함한다.
 - Supabase Dashboard의 임의 DDL로 schema를 변경하지 않는다. Prisma migration 파일을 source of truth로 유지하고, dashboard 변경이 필요하면 migration으로 재현 가능해야 한다.
 - RLS를 도입한 테이블은 허용·거부 케이스를 테스트한다.

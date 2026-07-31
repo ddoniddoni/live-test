@@ -5,8 +5,12 @@ const prisma = new PrismaClient();
 async function main(): Promise<void> {
   await prisma.auditLog.deleteMany();
   await prisma.realtimeEvent.deleteMany();
+  await prisma.orderItem.deleteMany();
+  await prisma.order.deleteMany();
   await prisma.chatMessage.deleteMany();
   await prisma.chatRoom.deleteMany();
+  await prisma.chatTimeout.deleteMany();
+  await prisma.coupon.deleteMany();
   await prisma.liveSession.deleteMany();
   await prisma.productVariant.deleteMany();
   await prisma.product.deleteMany();
@@ -79,6 +83,7 @@ async function main(): Promise<void> {
       id: 'demo',
       title: 'LiveFlow 데모 방송',
       status: LiveStatus.LIVE,
+      featuredProductId: 'soft-knit',
       startedAt: new Date('2026-07-31T00:00:00.000Z'),
       chatRoom: {
         create: {

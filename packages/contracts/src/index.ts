@@ -43,6 +43,54 @@ export const productSchema = z.object({
 });
 export type Product = z.infer<typeof productSchema>;
 
+export const couponDiscountTypeSchema = z.enum(['PERCENT', 'FIXED']);
+export type CouponDiscountType = z.infer<typeof couponDiscountTypeSchema>;
+
+export const couponStatusSchema = z.enum(['PUBLISHED', 'DISABLED']);
+export type CouponStatus = z.infer<typeof couponStatusSchema>;
+
+export const couponSchema = z.object({
+  id: z.string().min(1),
+  liveId: liveIdSchema,
+  type: couponDiscountTypeSchema,
+  value: z.int().positive(),
+  minOrderAmountKrw: z.int().nonnegative(),
+  startsAt: z.iso.datetime(),
+  endsAt: z.iso.datetime(),
+  usageLimit: z.int().positive().nullable(),
+  usedCount: z.int().nonnegative(),
+  status: couponStatusSchema,
+});
+export type Coupon = z.infer<typeof couponSchema>;
+
+export const orderStatusSchema = z.enum(['PENDING', 'PAID', 'FAILED', 'CANCELLED']);
+export type OrderStatus = z.infer<typeof orderStatusSchema>;
+
+export const orderItemSchema = z.object({
+  id: z.string().min(1),
+  productVariantId: z.string().min(1),
+  productId: z.string().min(1),
+  productName: z.string().min(1),
+  variantName: z.string().min(1),
+  quantity: z.int().positive(),
+  unitPriceKrw: z.int().positive(),
+});
+export type OrderItem = z.infer<typeof orderItemSchema>;
+
+export const orderSchema = z.object({
+  id: z.string().min(1),
+  userId: z.string().min(1),
+  liveId: liveIdSchema,
+  couponId: z.string().min(1).nullable(),
+  status: orderStatusSchema,
+  subtotalKrw: z.int().nonnegative(),
+  discountKrw: z.int().nonnegative(),
+  totalKrw: z.int().nonnegative(),
+  createdAt: z.iso.datetime(),
+  items: z.array(orderItemSchema).min(1),
+});
+export type Order = z.infer<typeof orderSchema>;
+
 export const liveSessionSchema = z.object({
   id: liveIdSchema,
   title: z.string().min(1),
@@ -113,6 +161,44 @@ export const createChatMessageRequestSchema = z.object({
 });
 export type CreateChatMessageRequest = z.infer<typeof createChatMessageRequestSchema>;
 
+export const chatMessageIdSchema = z.string().min(1).max(64);
+export const chatMessageParamsSchema = liveParamsSchema.extend({
+  messageId: chatMessageIdSchema,
+});
+
+export const chatUserIdSchema = z.string().min(1).max(64);
+export const chatTimeoutParamsSchema = liveParamsSchema.extend({
+  userId: chatUserIdSchema,
+});
+
+export const hideChatMessageRequestSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, '숨김 사유를 입력해 주세요.')
+    .max(300, '숨김 사유는 300자 이하로 입력해 주세요.'),
+});
+export type HideChatMessageRequest = z.infer<typeof hideChatMessageRequestSchema>;
+
+export const chatTimeoutUserRequestSchema = z.object({
+  durationMinutes: z
+    .number()
+    .int()
+    .min(1, '채팅 제한 시간은 1분 이상이어야 합니다.')
+    .max(1440, '채팅 제한 시간은 24시간 이하여야 합니다.'),
+  reason: z
+    .string()
+    .trim()
+    .min(1, '채팅 제한 사유를 입력해 주세요.')
+    .max(300, '채팅 제한 사유는 300자 이하로 입력해 주세요.'),
+});
+export type ChatTimeoutUserRequest = z.infer<typeof chatTimeoutUserRequestSchema>;
+
+export const chatAccessStatusSchema = z.object({
+  timeoutExpiresAt: z.iso.datetime().nullable(),
+});
+export type ChatAccessStatus = z.infer<typeof chatAccessStatusSchema>;
+
 export const chatMessagesQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -132,6 +218,7 @@ export type ChatMessagesQuery = z.infer<typeof chatMessagesQuerySchema>;
 export const liveSnapshotSchema = z.object({
   live: liveSessionSchema,
   featuredProduct: productSchema.nullable(),
+  activeCoupon: couponSchema.nullable(),
   products: z.array(productSchema),
   lastEventSequence: z.int().nonnegative(),
   chat: chatMessagePageSchema,
@@ -142,6 +229,42 @@ export const featureProductRequestSchema = z.object({
   productId: z.string().min(1).max(64).nullable(),
 });
 export type FeatureProductRequest = z.infer<typeof featureProductRequestSchema>;
+
+export const publishCouponRequestSchema = z
+  .object({
+    type: couponDiscountTypeSchema,
+    value: z.coerce.number().int().positive(),
+    minOrderAmountKrw: z.coerce.number().int().nonnegative(),
+    endsAt: z.iso.datetime(),
+    usageLimit: z.coerce.number().int().positive().max(100_000).nullable(),
+  })
+  .superRefine((coupon, context) => {
+    if (coupon.type === 'PERCENT' && coupon.value > 100) {
+      context.addIssue({
+        code: 'custom',
+        path: ['value'],
+        message: '퍼센트 할인은 100%를 넘을 수 없습니다.',
+      });
+    }
+
+    if (new Date(coupon.endsAt).getTime() <= Date.now()) {
+      context.addIssue({
+        code: 'custom',
+        path: ['endsAt'],
+        message: '쿠폰 만료 시각은 현재보다 이후여야 합니다.',
+      });
+    }
+  });
+export type PublishCouponRequest = z.infer<typeof publishCouponRequestSchema>;
+
+export const idempotencyKeySchema = z.string().uuid();
+
+export const createOrderRequestSchema = z.object({
+  liveId: liveIdSchema,
+  productVariantId: z.string().min(1).max(64),
+  quantity: z.coerce.number().int().min(1).max(10),
+});
+export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 
 export const liveJoinRequestSchema = z.object({
   liveId: liveIdSchema,
@@ -161,6 +284,56 @@ export const productFeaturedEventSchema = z.object({
 });
 export type ProductFeaturedEvent = z.infer<typeof productFeaturedEventSchema>;
 
+export const couponPublishedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('coupon.published'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    coupon: couponSchema,
+  }),
+});
+export type CouponPublishedEvent = z.infer<typeof couponPublishedEventSchema>;
+
+export const couponRedeemedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('coupon.redeemed'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    coupon: couponSchema,
+  }),
+});
+export type CouponRedeemedEvent = z.infer<typeof couponRedeemedEventSchema>;
+
+export const inventoryUpdatedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('inventory.updated'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    productId: z.string().min(1),
+    productVariantId: z.string().min(1),
+    stock: z.int().nonnegative(),
+  }),
+});
+export type InventoryUpdatedEvent = z.infer<typeof inventoryUpdatedEventSchema>;
+
+export const orderStatusChangedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('order.status.changed'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    order: orderSchema,
+  }),
+});
+export type OrderStatusChangedEvent = z.infer<typeof orderStatusChangedEventSchema>;
+
 export const chatMessageCreatedEventSchema = z.object({
   eventId: z.string().min(1),
   liveId: liveIdSchema,
@@ -173,9 +346,40 @@ export const chatMessageCreatedEventSchema = z.object({
 });
 export type ChatMessageCreatedEvent = z.infer<typeof chatMessageCreatedEventSchema>;
 
+export const chatMessageHiddenEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('chat.message.hidden'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    messageId: chatMessageIdSchema,
+  }),
+});
+export type ChatMessageHiddenEvent = z.infer<typeof chatMessageHiddenEventSchema>;
+
+export const chatUserTimedOutEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('chat.user.timed_out'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    userId: chatUserIdSchema,
+    expiresAt: z.iso.datetime(),
+  }),
+});
+export type ChatUserTimedOutEvent = z.infer<typeof chatUserTimedOutEventSchema>;
+
 export const realtimeEventSchema = z.discriminatedUnion('type', [
   productFeaturedEventSchema,
+  couponPublishedEventSchema,
+  couponRedeemedEventSchema,
+  inventoryUpdatedEventSchema,
+  orderStatusChangedEventSchema,
   chatMessageCreatedEventSchema,
+  chatMessageHiddenEventSchema,
+  chatUserTimedOutEventSchema,
 ]);
 export type RealtimeEvent = z.infer<typeof realtimeEventSchema>;
 

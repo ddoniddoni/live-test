@@ -9,7 +9,7 @@
 | 대상 릴리스 | Portfolio MVP 1.0 |
 | 패키지 관리자 | npm |
 | 주요 화면 | 사용자 라이브 화면, 운영자 컨트롤룸 |
-| 주요 기술 축 | Next.js, Fastify, Socket.IO, Supabase PostgreSQL, Prisma, AI provider adapter |
+| 주요 기술 축 | Next.js, NestJS(Fastify adapter), Socket.IO, Supabase PostgreSQL, Prisma, AI provider adapter |
 | 기준 문서 | 루트 `AGENTS.md`, 본 `prd.md` |
 
 이 문서에서 `MUST`는 MVP 완료에 필수, `SHOULD`는 강한 권장, `COULD`는 후속 확장 항목을 의미한다.
@@ -502,8 +502,8 @@ P1에서 SHOULD:
                │ HTTPS API      │ Socket.IO
                ▼                ▼
 ┌──────────── API + Socket Server ────────────┐
-│ Fastify routes · auth · domain services     │
-│ Socket authentication · rooms · event emit │
+│ NestJS controller · auth · domain services │
+│ Socket.IO Gateway authentication · rooms   │
 └───────────────────────┬─────────────────────┘
                         ▼
               Supabase PostgreSQL
@@ -1310,7 +1310,7 @@ AI: Mock provider 기본, real provider optional
 - cold start와 reconnect UX가 있다.
 - DB migration과 seed를 명시적으로 실행한다.
 - Prisma migration을 schema의 source of truth로 유지한다. Supabase Dashboard의 수동 schema 변경은 허용하지 않는다.
-- 이번 구조에서는 Fastify + Prisma만 DB에 연결한다. Data API를 활성화하거나 browser direct access를 도입하는 변경은 RLS 정책과 테스트를 함께 포함한다.
+- 이번 구조에서는 NestJS + Prisma만 DB에 연결한다. Data API를 활성화하거나 browser direct access를 도입하는 변경은 RLS 정책과 테스트를 함께 포함한다.
 - 공개 demo에는 reset 전략과 rate limit이 있다.
 - single Socket instance를 유지한다. 자동 scale-out을 켤 경우 Redis Adapter 없이 안전하다고 가정하지 않는다.
 
@@ -1383,7 +1383,7 @@ OPENAI_API_KEY=
 
 다음 항목은 bootstrap 또는 해당 phase에서 ADR로 확정한다.
 
-1. Node.js 26.4.0 기준 runtime 유지 및 후속 LTS 전환 시점
+1. Node.js 24.14.1 LTS 기준 runtime 유지 및 후속 LTS 전환 시점
 2. Prisma의 client 생성 위치와 serverless 연결 전략
 3. Socket 인증 token 저장·전달 방식
 4. event replay 보존 기간과 snapshot 기준

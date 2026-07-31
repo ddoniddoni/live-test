@@ -1,14 +1,31 @@
 import {
   apiErrorSchema,
+  chatAccessStatusSchema,
+  chatMessageHiddenEventSchema,
   chatMessagePageSchema,
   chatMessageSchema,
+  chatUserTimedOutEventSchema,
+  couponPublishedEventSchema,
+  couponRedeemedEventSchema,
+  createOrderRequestSchema,
   demoSessionResponseSchema,
+  inventoryUpdatedEventSchema,
   liveSnapshotSchema,
+  orderSchema,
   productFeaturedEventSchema,
   type ApiErrorResponse,
+  type ChatAccessStatus,
   type ChatMessage,
+  type ChatMessageHiddenEvent,
   type ChatMessagePage,
+  type ChatUserTimedOutEvent,
+  type Coupon,
+  type CouponPublishedEvent,
+  type CouponRedeemedEvent,
+  type CreateOrderRequest,
+  type InventoryUpdatedEvent,
   type LiveSnapshot,
+  type Order,
   type ProductFeaturedEvent,
 } from '@liveflow/contracts';
 
@@ -49,6 +66,10 @@ async function readResponse(response: Response): Promise<unknown> {
 
 export function liveSnapshotQueryKey(liveId: string): readonly ['live', string, 'snapshot'] {
   return ['live', liveId, 'snapshot'];
+}
+
+export function chatAccessQueryKey(liveId: string): readonly ['live', string, 'chat-access'] {
+  return ['live', liveId, 'chat-access'];
 }
 
 export async function fetchLiveSnapshot(liveId: string): Promise<LiveSnapshot> {
@@ -119,6 +140,18 @@ export async function fetchChatMessages(
   return chatMessagePageSchema.parse(body);
 }
 
+export async function fetchChatAccess(
+  liveId: string,
+  accessToken: string,
+): Promise<ChatAccessStatus> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/lives/${liveId}/chat-access`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return chatAccessStatusSchema.parse(body);
+}
+
 export async function createChatMessage(
   liveId: string,
   input: {
@@ -140,6 +173,91 @@ export async function createChatMessage(
   return chatMessageSchema.parse(body);
 }
 
+export async function hideChatMessage(
+  liveId: string,
+  messageId: string,
+  reason: string,
+  accessToken: string,
+): Promise<ChatMessageHiddenEvent> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/messages/${messageId}/hide`), {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ reason }),
+    }),
+  );
+  return chatMessageHiddenEventSchema.parse(body);
+}
+
+export async function timeoutChatUser(
+  liveId: string,
+  userId: string,
+  input: {
+    durationMinutes: number;
+    reason: string;
+  },
+  accessToken: string,
+): Promise<ChatUserTimedOutEvent> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/users/${userId}/chat-timeout`), {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+  return chatUserTimedOutEventSchema.parse(body);
+}
+
+export async function publishCoupon(
+  liveId: string,
+  input: {
+    type: Coupon['type'];
+    value: number;
+    minOrderAmountKrw: number;
+    endsAt: string;
+    usageLimit: number | null;
+  },
+  accessToken: string,
+): Promise<CouponPublishedEvent> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/coupons`), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+  return couponPublishedEventSchema.parse(body);
+}
+
+export async function createMockOrder(
+  input: CreateOrderRequest,
+  idempotencyKey: string,
+  accessToken: string,
+): Promise<Order> {
+  const parsedInput = createOrderRequestSchema.parse(input);
+  const body = await readResponse(
+    await fetch(getApiUrl('/api/v1/orders'), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey,
+      },
+      body: JSON.stringify(parsedInput),
+    }),
+  );
+  return orderSchema.parse(body);
+}
+
 export function mergeProductFeaturedEvent(
   snapshot: LiveSnapshot | undefined,
   event: ProductFeaturedEvent,
@@ -151,6 +269,64 @@ export function mergeProductFeaturedEvent(
   return {
     ...snapshot,
     featuredProduct: event.payload.product,
+    lastEventSequence: event.sequence,
+  };
+}
+
+export function mergeCouponPublishedEvent(
+  snapshot: LiveSnapshot | undefined,
+  event: CouponPublishedEvent,
+): LiveSnapshot | undefined {
+  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    activeCoupon: event.payload.coupon,
+    lastEventSequence: event.sequence,
+  };
+}
+
+export function mergeCouponRedeemedEvent(
+  snapshot: LiveSnapshot | undefined,
+  event: CouponRedeemedEvent,
+): LiveSnapshot | undefined {
+  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    activeCoupon: event.payload.coupon,
+    lastEventSequence: event.sequence,
+  };
+}
+
+export function mergeInventoryUpdatedEvent(
+  snapshot: LiveSnapshot | undefined,
+  event: InventoryUpdatedEvent,
+): LiveSnapshot | undefined {
+  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  const updateProductStock = (product: LiveSnapshot['products'][number]) =>
+    product.id !== event.payload.productId
+      ? product
+      : {
+          ...product,
+          variants: product.variants.map((variant) =>
+            variant.id === event.payload.productVariantId
+              ? { ...variant, stock: event.payload.stock }
+              : variant,
+          ),
+        };
+
+  return {
+    ...snapshot,
+    products: snapshot.products.map(updateProductStock),
+    featuredProduct: snapshot.featuredProduct ? updateProductStock(snapshot.featuredProduct) : null,
     lastEventSequence: event.sequence,
   };
 }
@@ -199,7 +375,43 @@ export function mergeChatMessagePage(
     chat: {
       messages: mergeChatMessages(snapshot.chat.messages, page.messages),
       lastMessageSequence: Math.max(snapshot.chat.lastMessageSequence, page.lastMessageSequence),
-      hasMore: snapshot.chat.hasMore || page.hasMore,
+      hasMore: snapshot.chat.hasMore,
+    },
+  };
+}
+
+export function prependChatMessagePage(
+  snapshot: LiveSnapshot | undefined,
+  page: ChatMessagePage,
+): LiveSnapshot | undefined {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    chat: {
+      messages: mergeChatMessages(snapshot.chat.messages, page.messages),
+      lastMessageSequence: Math.max(snapshot.chat.lastMessageSequence, page.lastMessageSequence),
+      hasMore: page.hasMore,
+    },
+  };
+}
+
+export function mergeChatMessageHiddenEvent(
+  snapshot: LiveSnapshot | undefined,
+  event: ChatMessageHiddenEvent,
+): LiveSnapshot | undefined {
+  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    lastEventSequence: event.sequence,
+    chat: {
+      ...snapshot.chat,
+      messages: snapshot.chat.messages.filter((message) => message.id !== event.payload.messageId),
     },
   };
 }

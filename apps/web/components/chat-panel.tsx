@@ -2,19 +2,17 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
-import { type FormEvent, type KeyboardEvent, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type PendingChatMessage,
+  VirtualizedChatMessageList,
+} from './virtualized-chat-message-list';
 import {
   ApiRequestError,
   createChatMessage,
   liveSnapshotQueryKey,
   mergeChatMessage,
 } from '../lib/live-api';
-
-type PendingChatMessage = {
-  clientMessageId: string;
-  content: string;
-  status: 'SENDING' | 'FAILED';
-};
 
 type ChatPanelProps = {
   liveId: string;
@@ -24,33 +22,61 @@ type ChatPanelProps = {
     nickname: string;
     role: Role;
   } | null;
+  hasMore: boolean;
   messages: ChatMessage[];
   sessionError?: string | null;
+  chatTimeoutExpiresAt?: string | null;
   variant: 'viewer' | 'admin';
+  onHideMessage?: (messageId: string, reason: string) => void;
+  hidingMessageId?: string | null;
+  onTimeoutUser?: (userId: string, durationMinutes: number, reason: string) => void;
+  timingOutUserId?: string | null;
+  moderationError?: string | null;
 };
 
-const timeFormatter = new Intl.DateTimeFormat('ko-KR', {
+const timeoutTimeFormatter = new Intl.DateTimeFormat('ko-KR', {
   hour: '2-digit',
   minute: '2-digit',
   timeZone: 'Asia/Seoul',
 });
 
-function formatMessageTime(createdAt: string): string {
-  return timeFormatter.format(new Date(createdAt));
-}
-
 export function ChatPanel({
   liveId,
   accessToken,
   currentUser,
+  hasMore,
   messages,
   sessionError,
+  chatTimeoutExpiresAt,
   variant,
+  onHideMessage,
+  hidingMessageId,
+  onTimeoutUser,
+  timingOutUserId,
+  moderationError,
 }: ChatPanelProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
+  const [now, setNow] = useState(() => Date.now());
   const isComposingRef = useRef(false);
   const [pendingMessages, setPendingMessages] = useState<PendingChatMessage[]>([]);
+  const timeoutAt = chatTimeoutExpiresAt ? Date.parse(chatTimeoutExpiresAt) : Number.NaN;
+  const isChatTimedOut = Number.isFinite(timeoutAt) && timeoutAt > now;
+
+  useEffect(() => {
+    if (!Number.isFinite(timeoutAt) || timeoutAt <= Date.now()) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(
+      () => {
+        setNow(Date.now());
+      },
+      timeoutAt - Date.now() + 100,
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, [timeoutAt]);
   const sendMutation = useMutation({
     mutationFn: (input: { clientMessageId: string; content: string }) => {
       if (!accessToken) {
@@ -79,14 +105,13 @@ export function ChatPanel({
       );
     },
   });
-
-  const persistedClientMessageIds = new Set(messages.map((message) => message.clientMessageId));
-  const displayedPendingMessages = pendingMessages.filter(
-    (pendingMessage) => !persistedClientMessageIds.has(pendingMessage.clientMessageId),
-  );
   const isSending = pendingMessages.some((pendingMessage) => pendingMessage.status === 'SENDING');
 
   function sendMessage(clientMessageId: string, content: string): void {
+    if (isChatTimedOut) {
+      return;
+    }
+
     setPendingMessages((currentMessages) => {
       const withoutPreviousAttempt = currentMessages.filter(
         (pendingMessage) => pendingMessage.clientMessageId !== clientMessageId,
@@ -98,7 +123,7 @@ export function ChatPanel({
 
   function submitDraft(): void {
     const content = draft.trim();
-    if (!content || !accessToken || !currentUser || isSending) {
+    if (!content || !accessToken || !currentUser || isSending || isChatTimedOut) {
       return;
     }
 
@@ -133,52 +158,29 @@ export function ChatPanel({
         <span className="chat-count">메시지 {messages.length}개</span>
       </div>
 
-      <ol className="chat-message-list" aria-label="실시간 채팅 메시지">
-        {messages.map((message) => {
-          const isCurrentUser = message.sender.id === currentUser?.id;
-          return (
-            <li
-              className={`chat-message ${isCurrentUser ? 'is-current-user' : ''}`}
-              key={message.id}
-            >
-              <div className="chat-message-meta">
-                <strong>{isCurrentUser ? '나' : message.sender.nickname}</strong>
-                <span>{message.sender.role === 'ADMIN' ? '운영자' : '시청자'}</span>
-                <time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
-              </div>
-              <p>{message.content}</p>
-            </li>
-          );
-        })}
+      <VirtualizedChatMessageList
+        currentUser={currentUser}
+        hasMore={hasMore}
+        hidingMessageId={hidingMessageId}
+        liveId={liveId}
+        messages={messages}
+        onHideMessage={onHideMessage}
+        onTimeoutUser={onTimeoutUser}
+        onRetryMessage={sendMessage}
+        pendingMessages={pendingMessages}
+        timingOutUserId={timingOutUserId}
+      />
 
-        {displayedPendingMessages.map((message) => (
-          <li className="chat-message is-current-user is-pending" key={message.clientMessageId}>
-            <div className="chat-message-meta">
-              <strong>나</strong>
-              <span>{message.status === 'SENDING' ? '전송 중' : '전송 실패'}</span>
-            </div>
-            <p>{message.content}</p>
-            {message.status === 'FAILED' ? (
-              <button
-                className="chat-retry"
-                onClick={() => sendMessage(message.clientMessageId, message.content)}
-                type="button"
-              >
-                다시 보내기
-              </button>
-            ) : null}
-          </li>
-        ))}
-
-        {messages.length === 0 && displayedPendingMessages.length === 0 ? (
-          <li className="chat-empty">첫 메시지를 남겨 보세요.</li>
-        ) : null}
-      </ol>
+      {moderationError ? (
+        <p className="chat-moderation-error" role="alert">
+          {moderationError}
+        </p>
+      ) : null}
 
       <form className="chat-form" onSubmit={handleSubmit}>
         <label htmlFor={`${variant}-chat-draft`}>메시지 입력</label>
         <textarea
-          disabled={!accessToken || !currentUser}
+          disabled={!accessToken || !currentUser || isChatTimedOut}
           id={`${variant}-chat-draft`}
           maxLength={500}
           onChange={(event) => setDraft(event.target.value)}
@@ -189,21 +191,29 @@ export function ChatPanel({
             isComposingRef.current = true;
           }}
           onKeyDown={handleKeyDown}
-          placeholder={accessToken ? '메시지를 입력하세요' : '채팅 세션을 준비하는 중입니다'}
+          placeholder={
+            isChatTimedOut
+              ? '채팅 제한이 적용되어 있습니다'
+              : accessToken
+                ? '메시지를 입력하세요'
+                : '채팅 세션을 준비하는 중입니다'
+          }
           rows={2}
           value={draft}
         />
         <div className="chat-form-actions">
           <p aria-live="polite" className="chat-form-status">
             {sessionError ??
-              (sendMutation.isError
-                ? sendMutation.error instanceof ApiRequestError
-                  ? sendMutation.error.message
-                  : '메시지를 보내지 못했습니다. 다시 시도해 주세요.'
-                : 'Enter로 전송 · Shift + Enter로 줄바꿈')}
+              (isChatTimedOut
+                ? `채팅 제한됨 · ${timeoutTimeFormatter.format(new Date(timeoutAt))}까지`
+                : sendMutation.isError
+                  ? sendMutation.error instanceof ApiRequestError
+                    ? sendMutation.error.message
+                    : '메시지를 보내지 못했습니다. 다시 시도해 주세요.'
+                  : 'Enter로 전송 · Shift + Enter로 줄바꿈')}
           </p>
           <button
-            disabled={!draft.trim() || !accessToken || !currentUser || isSending}
+            disabled={!draft.trim() || !accessToken || !currentUser || isSending || isChatTimedOut}
             type="submit"
           >
             보내기

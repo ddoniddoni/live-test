@@ -1,15 +1,25 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
-import { realtimeEventSchema, type ChatMessagePage, type LiveSnapshot } from '@liveflow/contracts';
+import {
+  realtimeEventSchema,
+  type ChatAccessStatus,
+  type ChatMessagePage,
+  type LiveSnapshot,
+} from '@liveflow/contracts';
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
+  chatAccessQueryKey,
   fetchChatMessages,
   getSocketUrl,
   liveSnapshotQueryKey,
   mergeChatMessage,
+  mergeChatMessageHiddenEvent,
   mergeChatMessagePage,
+  mergeCouponPublishedEvent,
+  mergeCouponRedeemedEvent,
+  mergeInventoryUpdatedEvent,
   mergeProductFeaturedEvent,
 } from './live-api';
 
@@ -72,6 +82,7 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
           void Promise.all([
             queryClient.invalidateQueries({ queryKey }),
             fetchRecoveryPages(lastMessageSequence),
+            queryClient.invalidateQueries({ queryKey: chatAccessQueryKey(liveId) }),
           ])
             .then(([, pages]) => {
               queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
@@ -101,6 +112,50 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
         queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
           mergeProductFeaturedEvent(snapshot, liveEvent),
         );
+        return;
+      }
+
+      if (liveEvent.type === 'coupon.published') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeCouponPublishedEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'coupon.redeemed') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeCouponRedeemedEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'inventory.updated') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeInventoryUpdatedEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'order.status.changed') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
+            ? snapshot
+            : { ...snapshot, lastEventSequence: liveEvent.sequence },
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'chat.message.hidden') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeChatMessageHiddenEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'chat.user.timed_out') {
+        queryClient.setQueryData<ChatAccessStatus>(chatAccessQueryKey(liveId), {
+          timeoutExpiresAt: liveEvent.payload.expiresAt,
+        });
         return;
       }
 

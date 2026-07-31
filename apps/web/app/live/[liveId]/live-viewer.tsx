@@ -1,12 +1,16 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import type { Coupon } from '@liveflow/contracts';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ChatPanel } from '../../../components/chat-panel';
+import { MockOrderForm } from '../../../components/mock-order-form';
 import {
   ApiRequestError,
+  chatAccessQueryKey,
   createViewerSession,
+  fetchChatAccess,
   fetchLiveSnapshot,
   liveSnapshotQueryKey,
 } from '../../../lib/live-api';
@@ -22,6 +26,14 @@ function formatKrw(amount: number): string {
   return krwFormatter.format(amount);
 }
 
+const couponTimeFormatter = new Intl.DateTimeFormat('ko-KR', {
+  month: 'long',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Asia/Seoul',
+});
+
 function connectionLabel(connectionState: ConnectionState): string {
   const labels: Record<ConnectionState, string> = {
     CONNECTING: '실시간 서버 연결 중',
@@ -34,12 +46,76 @@ function connectionLabel(connectionState: ConnectionState): string {
   return labels[connectionState];
 }
 
+function ActiveCouponPanel({ coupon }: { coupon: Coupon | null }) {
+  const couponEndsAt = coupon ? Date.parse(coupon.endsAt) : Number.NaN;
+  const [now, setNow] = useState(() => Date.now());
+  const isActive =
+    coupon !== null &&
+    coupon.status === 'PUBLISHED' &&
+    (coupon.usageLimit === null || coupon.usedCount < coupon.usageLimit) &&
+    Number.isFinite(couponEndsAt) &&
+    couponEndsAt > now;
+
+  useEffect(() => {
+    if (!Number.isFinite(couponEndsAt) || couponEndsAt <= Date.now()) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(
+      () => {
+        setNow(Date.now());
+      },
+      couponEndsAt - Date.now() + 100,
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, [couponEndsAt]);
+
+  return (
+    <section className="viewer-coupon" aria-labelledby="coupon-heading">
+      {isActive && coupon ? (
+        <article className="active-coupon-card">
+          <div>
+            <p className="panel-kicker">LIVE COUPON</p>
+            <h2 id="coupon-heading">
+              {coupon.type === 'PERCENT'
+                ? `${coupon.value}% 즉시 할인`
+                : `${formatKrw(coupon.value)} 즉시 할인`}
+            </h2>
+            <p>
+              {coupon.minOrderAmountKrw > 0
+                ? `${formatKrw(coupon.minOrderAmountKrw)} 이상 주문 시 적용`
+                : '최소 주문 금액 없이 적용'}
+            </p>
+          </div>
+          <div className="coupon-expiry">
+            <span>마감</span>
+            <strong>{couponTimeFormatter.format(new Date(coupon.endsAt))}</strong>
+            {coupon.usageLimit ? (
+              <small>잔여 {coupon.usageLimit - coupon.usedCount}장</small>
+            ) : null}
+          </div>
+        </article>
+      ) : (
+        <div className="empty-coupon" role="status">
+          현재 발행된 라이브 쿠폰이 없습니다.
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function LiveViewer({ liveId }: { liveId: string }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const snapshotQuery = useQuery({
     queryKey: liveSnapshotQueryKey(liveId),
     queryFn: () => fetchLiveSnapshot(liveId),
+  });
+  const chatAccessQuery = useQuery({
+    queryKey: chatAccessQueryKey(liveId),
+    queryFn: () => fetchChatAccess(liveId, accessToken ?? ''),
+    enabled: accessToken !== null,
   });
   const connectionState = useLiveRealtime(liveId, accessToken);
 
@@ -79,27 +155,56 @@ export function LiveViewer({ liveId }: { liveId: string }) {
     );
   }
 
-  const { featuredProduct, live } = snapshotQuery.data;
+  const { activeCoupon, featuredProduct, live } = snapshotQuery.data;
+  const liveStatusLabel =
+    live.status === 'LIVE' ? 'LIVE' : live.status === 'READY' ? 'COMING SOON' : 'ENDED';
 
   return (
     <main className="live-shell viewer-shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          LIVEFLOW
-        </Link>
-        <Link className="text-link" href={`/admin/lives/${liveId}`}>
-          운영자 화면
-        </Link>
+      <header className="topbar viewer-topbar">
+        <div className="topbar-brand-group">
+          <Link className="brand" href="/">
+            LIVEFLOW
+          </Link>
+          <span className={`topbar-live-badge is-${live.status.toLowerCase()}`}>
+            <span aria-hidden="true" />
+            {liveStatusLabel}
+          </span>
+        </div>
+        <div className="topbar-actions">
+          <span className={`connection-pill connection-${connectionState.toLowerCase()}`}>
+            <span aria-hidden="true" />
+            {connectionLabel(connectionState)}
+          </span>
+          <Link className="text-link" href={`/admin/lives/${liveId}`}>
+            운영자 화면
+          </Link>
+        </div>
       </header>
 
       <section className="viewer-grid" aria-label="라이브 방송">
         <div className="broadcast-stage">
-          <div className="live-badge">LIVE</div>
-          <p className="stage-kicker">LIVEFLOW EDIT</p>
+          <div className={`live-badge is-${live.status.toLowerCase()}`}>
+            <span aria-hidden="true" />
+            {liveStatusLabel}
+          </div>
+          <p className="stage-kicker">LIVE COMMERCE · LIVEFLOW EDIT</p>
           <h1>{live.title}</h1>
-          <p>오늘의 가볍고 편안한 여름 스타일을 함께 살펴보세요.</p>
+          <p>
+            {featuredProduct
+              ? `${featuredProduct.name}을(를) 지금 소개하고 있어요.`
+              : '라이브에서 소개하는 상품과 한정 혜택을 확인해 보세요.'}
+          </p>
+          <div className="stage-now-showing">
+            <span>NOW SHOWING</span>
+            <strong>{featuredProduct?.name ?? 'LIVEFLOW SELECT'}</strong>
+          </div>
+          <span aria-hidden="true" className="stage-brand-mark">
+            LF
+          </span>
           <div className="stage-orb stage-orb-one" aria-hidden="true" />
           <div className="stage-orb stage-orb-two" aria-hidden="true" />
+          <div className="stage-orb stage-orb-three" aria-hidden="true" />
         </div>
 
         <ChatPanel
@@ -107,55 +212,60 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           currentUser={
             accessToken ? { id: 'demo-viewer', nickname: 'Demo Viewer', role: 'VIEWER' } : null
           }
+          chatTimeoutExpiresAt={chatAccessQuery.data?.timeoutExpiresAt ?? null}
           liveId={liveId}
+          hasMore={snapshotQuery.data.chat.hasMore}
           messages={snapshotQuery.data.chat.messages}
           sessionError={sessionError}
           variant="viewer"
         />
       </section>
 
-      <section className="connection-row" aria-live="polite">
-        <span
-          className={`connection-dot connection-${connectionState.toLowerCase()}`}
-          aria-hidden="true"
-        />
-        {sessionError ?? connectionLabel(connectionState)}
-      </section>
+      {sessionError ? (
+        <p className="viewer-session-error" role="alert">
+          {sessionError}
+        </p>
+      ) : null}
 
-      <section className="featured-section" aria-labelledby="featured-heading">
-        <div>
-          <p className="panel-kicker">NOW SHOWING</p>
-          <h2 id="featured-heading">현재 소개 상품</h2>
-        </div>
-
-        {featuredProduct ? (
-          <article className="featured-product">
-            <div className="product-art product-art-viewer" aria-hidden="true">
-              <span>{featuredProduct.name.slice(0, 1)}</span>
+      <div className="viewer-commerce-grid">
+        <section className="featured-section" aria-labelledby="featured-heading">
+          <div className="section-heading">
+            <div>
+              <p className="panel-kicker">NOW SHOWING</p>
+              <h2 id="featured-heading">현재 소개 상품</h2>
             </div>
-            <div className="product-copy">
-              <p className="product-name">{featuredProduct.name}</p>
-              <p>{featuredProduct.description}</p>
-              <strong>{formatKrw(featuredProduct.priceKrw)}</strong>
-              <dl className="variant-list">
-                {featuredProduct.variants.map((variant) => (
-                  <div key={variant.id}>
-                    <dt>{variant.name}</dt>
-                    <dd>재고 {variant.stock}개</dd>
-                  </div>
-                ))}
-              </dl>
-              <button disabled type="button">
-                주문 기능 준비 중
-              </button>
-            </div>
-          </article>
-        ) : (
-          <div className="empty-product">
-            운영자가 상품을 소개하면 이 영역이 페이지 새로고침 없이 바뀝니다.
+            <span className="featured-live-note">실시간 재고 반영</span>
           </div>
-        )}
-      </section>
+
+          {featuredProduct ? (
+            <article className="featured-product">
+              <div className="product-art product-art-viewer" aria-hidden="true">
+                <span>{featuredProduct.name.slice(0, 1)}</span>
+                <small>LIVE PICK</small>
+              </div>
+              <div className="product-copy">
+                <p className="product-name">{featuredProduct.name}</p>
+                <p>{featuredProduct.description}</p>
+                <strong>{formatKrw(featuredProduct.priceKrw)}</strong>
+                <MockOrderForm
+                  activeCoupon={activeCoupon}
+                  accessToken={accessToken}
+                  key={featuredProduct.id}
+                  liveId={live.id}
+                  liveStatus={live.status}
+                  product={featuredProduct}
+                />
+              </div>
+            </article>
+          ) : (
+            <div className="empty-product">
+              운영자가 상품을 소개하면 이 영역이 페이지 새로고침 없이 바뀝니다.
+            </div>
+          )}
+        </section>
+
+        <ActiveCouponPanel coupon={activeCoupon} />
+      </div>
     </main>
   );
 }

@@ -13,7 +13,7 @@ LiveFlow는 PostgreSQL transaction, Prisma migration, Socket.IO 기반의 실시
 ## 결정
 
 - 개발·배포의 기본 DB는 Supabase managed PostgreSQL로 사용한다.
-- Fastify 서버가 Prisma를 통해 DB에 접근하고, PostgreSQL은 계속 데이터의 기준이다.
+- NestJS 서버가 Prisma를 통해 DB에 접근하고, PostgreSQL은 계속 데이터의 기준이다.
 - Prisma migration 파일을 schema의 source of truth로 유지한다. Supabase Dashboard에서 수동 DDL을
   실행해 schema를 변경하지 않는다.
 - Docker PostgreSQL은 선택적인 로컬 대체 수단이며 개발·실행의 필수 조건이 아니다.
@@ -25,14 +25,14 @@ LiveFlow는 PostgreSQL transaction, Prisma migration, Socket.IO 기반의 실시
 - Neon PostgreSQL: 단순한 managed Postgres 호스팅으로 유지한다.
 - Docker PostgreSQL: 오프라인 개발과 빈 DB migration 검증에 유용하지만 설치·운영을 개발자에게
   요구한다.
-- Supabase Auth·Realtime까지 즉시 도입: 제공 기능은 늘지만 현재 Fastify 권한 검증과 Socket.IO room
+- Supabase Auth·Realtime까지 즉시 도입: 제공 기능은 늘지만 현재 NestJS 권한 검증과 Socket.IO room
   설계를 동시에 바꾸므로 범위를 넓힌다.
 
 ## 결과와 trade-off
 
 - Supabase Dashboard로 DB 상태와 connection 정보를 관리할 수 있고, Docker 없이 개발을 시작할 수
   있다.
-- Prisma·Fastify·Socket.IO의 기존 도메인 책임과 transaction/emit 순서는 유지한다.
+- Prisma·NestJS·Socket.IO의 기존 도메인 책임과 transaction/emit 순서는 유지한다.
 - Supabase project와 connection secret을 별도로 관리해야 하며, Free Plan의 pause·제한은 실제 공개
   배포 전에 다시 확인해야 한다.
 - 빈 DB migration 재적용은 Supabase development project 또는 선택적 Docker PostgreSQL에서 검증한다.

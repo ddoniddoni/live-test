@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { logServerStartFailure } from './app.js';
 
 const environmentFilePath = fileURLToPath(new URL('../../../.env', import.meta.url));
 
@@ -16,11 +17,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 const app = await buildServer();
+app.enableShutdownHooks();
 
 try {
-  await app.listen({ host: '0.0.0.0', port });
+  await app.listen(port, '0.0.0.0');
 } catch (error: unknown) {
-  app.log.error(error, 'Failed to start the LiveFlow API server.');
+  logServerStartFailure(error);
   await app.close();
   process.exitCode = 1;
 }
