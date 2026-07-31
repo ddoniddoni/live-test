@@ -2,7 +2,14 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   type PendingChatMessage,
   VirtualizedChatMessageList,
@@ -32,6 +39,7 @@ type ChatPanelProps = {
   onTimeoutUser?: (userId: string, durationMinutes: number, reason: string) => void;
   timingOutUserId?: string | null;
   moderationError?: string | null;
+  mobileAccessory?: ReactNode;
 };
 
 const timeoutTimeFormatter = new Intl.DateTimeFormat('ko-KR', {
@@ -54,6 +62,7 @@ export function ChatPanel({
   onTimeoutUser,
   timingOutUserId,
   moderationError,
+  mobileAccessory,
 }: ChatPanelProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState('');
@@ -176,6 +185,8 @@ export function ChatPanel({
           {moderationError}
         </p>
       ) : null}
+
+      {mobileAccessory ? <div className="chat-mobile-accessory">{mobileAccessory}</div> : null}
 
       <form className="chat-form" onSubmit={handleSubmit}>
         <label htmlFor={`${variant}-chat-draft`}>메시지 입력</label>

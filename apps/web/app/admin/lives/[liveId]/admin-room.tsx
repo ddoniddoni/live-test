@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { LiveSnapshot } from '@liveflow/contracts';
+import Image from 'next/image';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { ChatPanel } from '../../../../components/chat-panel';
@@ -20,6 +21,8 @@ import {
   timeoutChatUser,
 } from '../../../../lib/live-api';
 import { useLiveRealtime } from '../../../../lib/use-live-realtime';
+import { stitchAssets } from '../../../../lib/stitch-assets';
+import { AdminProductControl, AdminSidebar } from './admin-room-sections';
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
   style: 'currency',
@@ -143,193 +146,182 @@ export function AdminRoom({ liveId }: { liveId: string }) {
   }
 
   const snapshot = snapshotQuery.data;
+  const lowestStockProduct = snapshot.products.reduce<{ name: string; stock: number } | null>(
+    (lowest, product) => {
+      const stock = product.variants.reduce((sum, variant) => sum + variant.stock, 0);
+      return lowest === null || stock < lowest.stock ? { name: product.name, stock } : lowest;
+    },
+    null,
+  );
+  const featureMutationStatus = featureMutation.isPending
+    ? '시청자 화면에 반영하는 중입니다…'
+    : featureMutation.isError
+      ? featureMutation.error instanceof Error
+        ? featureMutation.error.message
+        : '상품 변경에 실패했습니다.'
+      : '저장 후 실시간 이벤트가 발행됩니다.';
 
   return (
-    <main className="live-shell admin-shell">
-      <header className="topbar admin-topbar">
-        <Link className="brand" href="/">
-          LIVEFLOW <span>/ CONTROL ROOM</span>
-        </Link>
-        <Link className="text-link" href={`/live/${liveId}`}>
-          시청자 화면 보기
-        </Link>
-      </header>
+    <main className="admin-shell">
+      <AdminSidebar
+        accessToken={accessToken}
+        liveId={liveId}
+        loginError={loginError}
+        onLogin={handleLogin}
+        onPasswordChange={setPassword}
+        password={password}
+      />
 
-      <div className="admin-workspace">
-        <aside className="admin-sidebar" aria-label="운영자 세션">
-          <div className="admin-profile">
-            <span aria-hidden="true">LF</span>
+      <section className="admin-main">
+        <header className="admin-topbar">
+          <div className="admin-live-heading">
+            <span className={`admin-on-air is-${snapshot.live.status.toLowerCase()}`}>
+              <span aria-hidden="true" />
+              {snapshot.live.status === 'LIVE' ? 'ON AIR' : snapshot.live.status}
+            </span>
             <div>
-              <strong>운영자 컨트롤</strong>
-              <small>LiveFlow Admin</small>
-            </div>
-          </div>
-          <div className="admin-sidebar-divider" />
-          {accessToken ? (
-            <section className="admin-session-card">
-              <p className="panel-kicker">ADMIN SESSION</p>
-              <strong>권한이 확인되었습니다</strong>
-              <p>상품, 쿠폰, 채팅 운영 변경은 서버 저장 후 시청자에게 실시간 전파됩니다.</p>
-            </section>
-          ) : (
-            <section className="admin-login" aria-labelledby="login-heading">
-              <p className="panel-kicker">DEMO ADMIN</p>
-              <h2 id="login-heading">운영자 로그인</h2>
-              <p>상품 노출과 채팅 운영 전 관리자 세션이 필요합니다.</p>
-              <form onSubmit={handleLogin}>
-                <label htmlFor="admin-password">관리자 비밀번호</label>
-                <input
-                  autoComplete="current-password"
-                  id="admin-password"
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  type="password"
-                  value={password}
-                />
-                {loginError ? (
-                  <p className="form-error" role="alert">
-                    {loginError}
-                  </p>
-                ) : null}
-                <button type="submit">관리자 세션 시작</button>
-              </form>
-            </section>
-          )}
-          <Link className="admin-viewer-link" href={`/live/${liveId}`}>
-            시청자 화면 미리보기
-          </Link>
-        </aside>
-
-        <section className="admin-primary">
-          <section className="admin-header">
-            <div>
-              <p className="panel-kicker">BROADCAST CONTROL</p>
               <h1>{snapshot.live.title}</h1>
               <p>
-                방송 상태 <strong>{snapshot.live.status}</strong> ·{' '}
-                {connectionLabel(connectionState)}
+                <span>{connectionLabel(connectionState)}</span>
+                <span aria-hidden="true">•</span>
+                서버 저장 후 실시간 반영
               </p>
             </div>
-            <span className={`admin-session-status ${accessToken ? '' : 'muted'}`}>
-              {accessToken ? '관리자 세션 연결됨' : '관리자 로그인이 필요합니다'}
-            </span>
-          </section>
+          </div>
+          <Link className="admin-viewer-link" href={`/live/${liveId}`}>
+            시청자 화면 보기 ↗
+          </Link>
+        </header>
 
-          <section className="admin-preview" aria-label="라이브 상태 미리보기">
-            <div className="admin-preview-overlay">
-              <span className="live-badge">LIVE PREVIEW</span>
-              <p>시청자 노출 화면</p>
-              <strong>{snapshot.featuredProduct?.name ?? '소개 상품을 선택해 주세요'}</strong>
-            </div>
-            <span aria-hidden="true" className="admin-preview-mark">
-              LIVE
-              <br />
-              FLOW
-            </span>
-          </section>
+        <div className="admin-dashboard-scroll" id="dashboard">
+          <div className="admin-dashboard-grid">
+            <div className="admin-left-column">
+              <section className="admin-preview-card" id="broadcast-preview">
+                <header>
+                  <h2>◉ 송출 화면 미리보기</h2>
+                  <Link href={`/live/${liveId}`}>전체화면 ↗</Link>
+                </header>
+                <div className="admin-preview-media">
+                  <Image
+                    alt="라이브 송출 화면 미리보기"
+                    fill
+                    priority
+                    sizes="(max-width: 1000px) 100vw, 58vw"
+                    src={stitchAssets.adminLive}
+                  />
+                  <span>SAFE AREA</span>
+                </div>
+              </section>
 
-          <section className="product-control" aria-labelledby="product-control-heading">
-            <div className="section-heading">
-              <div>
-                <p className="panel-kicker">FEATURED PRODUCT</p>
-                <h2 id="product-control-heading">현재 소개 상품 선택</h2>
-              </div>
-              <p aria-live="polite" className="mutation-status">
-                {featureMutation.isPending
-                  ? '상품을 저장하고 시청자에게 반영하는 중입니다…'
-                  : featureMutation.isError
-                    ? featureMutation.error instanceof Error
-                      ? featureMutation.error.message
-                      : '상품 변경에 실패했습니다.'
-                    : '저장 성공 후 실시간 이벤트가 발행됩니다.'}
-              </p>
-            </div>
+              <AdminProductControl
+                accessToken={accessToken}
+                featuredProductId={snapshot.featuredProduct?.id ?? null}
+                isPending={featureMutation.isPending}
+                mutationStatus={featureMutationStatus}
+                onFeature={(productId) => featureMutation.mutate(productId)}
+                products={snapshot.products}
+              />
 
-            <div className="admin-product-grid">
-              {snapshot.products.map((product) => {
-                const isFeatured = product.id === snapshot.featuredProduct?.id;
-                return (
-                  <article
-                    className={`admin-product ${isFeatured ? 'is-featured' : ''}`}
-                    key={product.id}
-                  >
-                    <div className="product-art" aria-hidden="true">
-                      <span>{product.name.slice(0, 1)}</span>
-                    </div>
-                    <p className="product-name">{product.name}</p>
-                    <p>{product.description}</p>
-                    <strong>{formatKrw(product.priceKrw)}</strong>
-                    <p className="stock-summary">
-                      총 재고 {product.variants.reduce((sum, variant) => sum + variant.stock, 0)}개
-                    </p>
-                    <button
-                      disabled={!accessToken || featureMutation.isPending || isFeatured}
-                      onClick={() => featureMutation.mutate(product.id)}
-                      type="button"
-                    >
-                      {isFeatured ? '현재 소개 중' : '이 상품 소개하기'}
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        </section>
-
-        <aside className="admin-operations" aria-label="실시간 운영 도구">
-          <CouponPublishForm
-            disabled={!accessToken}
-            error={
-              couponMutation.isError
-                ? couponMutation.error instanceof Error
-                  ? couponMutation.error.message
-                  : '쿠폰을 발행하지 못했습니다. 다시 시도해 주세요.'
-                : null
-            }
-            isPending={couponMutation.isPending}
-            onPublish={(input) => couponMutation.mutateAsync(input)}
-          />
-
-          <ChatPanel
-            accessToken={accessToken}
-            currentUser={
-              accessToken ? { id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' } : null
-            }
-            liveId={liveId}
-            hasMore={snapshot.chat.hasMore}
-            messages={snapshot.chat.messages}
-            hidingMessageId={
-              hideMessageMutation.isPending
-                ? (hideMessageMutation.variables?.messageId ?? null)
-                : null
-            }
-            timingOutUserId={
-              timeoutUserMutation.isPending ? (timeoutUserMutation.variables?.userId ?? null) : null
-            }
-            moderationError={
-              hideMessageMutation.isError
-                ? hideMessageMutation.error instanceof Error
-                  ? hideMessageMutation.error.message
-                  : '메시지를 숨기지 못했습니다. 다시 시도해 주세요.'
-                : timeoutUserMutation.isError
-                  ? timeoutUserMutation.error instanceof Error
-                    ? timeoutUserMutation.error.message
-                    : '사용자를 채팅 제한하지 못했습니다. 다시 시도해 주세요.'
-                  : null
-            }
-            sessionError={loginError}
-            variant="admin"
-            {...(accessToken
-              ? {
-                  onHideMessage: (messageId: string, reason: string) =>
-                    hideMessageMutation.mutate({ messageId, reason }),
-                  onTimeoutUser: (userId: string, durationMinutes: number, reason: string) =>
-                    timeoutUserMutation.mutate({ userId, durationMinutes, reason }),
+              <CouponPublishForm
+                disabled={!accessToken}
+                error={
+                  couponMutation.isError
+                    ? couponMutation.error instanceof Error
+                      ? couponMutation.error.message
+                      : '쿠폰을 발행하지 못했습니다. 다시 시도해 주세요.'
+                    : null
                 }
-              : {})}
-          />
-        </aside>
-      </div>
+                isPending={couponMutation.isPending}
+                onPublish={(input) => couponMutation.mutateAsync(input)}
+              />
+            </div>
+
+            <aside className="admin-right-column" aria-label="실시간 운영 도구">
+              <section className="admin-ai-card">
+                <div className="admin-ai-heading">
+                  <span aria-hidden="true">✦</span>
+                  <h2>AI 채팅 요약 및 제안</h2>
+                </div>
+                <div>
+                  <p>
+                    라이브 채팅 요약과 운영 공지 제안은 다음 개발 단계에서 실제 AI 승인 흐름으로
+                    연결됩니다.
+                  </p>
+                  <span>준비 중 · 운영자 승인 후 발행</span>
+                </div>
+              </section>
+
+              <ChatPanel
+                accessToken={accessToken}
+                currentUser={
+                  accessToken
+                    ? { id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' }
+                    : null
+                }
+                liveId={liveId}
+                hasMore={snapshot.chat.hasMore}
+                messages={snapshot.chat.messages}
+                hidingMessageId={
+                  hideMessageMutation.isPending
+                    ? (hideMessageMutation.variables?.messageId ?? null)
+                    : null
+                }
+                timingOutUserId={
+                  timeoutUserMutation.isPending
+                    ? (timeoutUserMutation.variables?.userId ?? null)
+                    : null
+                }
+                moderationError={
+                  hideMessageMutation.isError
+                    ? hideMessageMutation.error instanceof Error
+                      ? hideMessageMutation.error.message
+                      : '메시지를 숨기지 못했습니다. 다시 시도해 주세요.'
+                    : timeoutUserMutation.isError
+                      ? timeoutUserMutation.error instanceof Error
+                        ? timeoutUserMutation.error.message
+                        : '사용자를 채팅 제한하지 못했습니다. 다시 시도해 주세요.'
+                      : null
+                }
+                sessionError={loginError}
+                variant="admin"
+                {...(accessToken
+                  ? {
+                      onHideMessage: (messageId: string, reason: string) =>
+                        hideMessageMutation.mutate({ messageId, reason }),
+                      onTimeoutUser: (userId: string, durationMinutes: number, reason: string) =>
+                        timeoutUserMutation.mutate({ userId, durationMinutes, reason }),
+                    }
+                  : {})}
+              />
+
+              <div className="admin-metrics-grid">
+                <article className="admin-metric-card coupon-metric">
+                  <span>진행중</span>
+                  <h3>라이브 쿠폰</h3>
+                  <strong>
+                    {snapshot.activeCoupon
+                      ? snapshot.activeCoupon.type === 'PERCENT'
+                        ? `${snapshot.activeCoupon.value}% 할인`
+                        : `${formatKrw(snapshot.activeCoupon.value)} 할인`
+                      : '발행된 쿠폰 없음'}
+                  </strong>
+                  <small>
+                    {snapshot.activeCoupon
+                      ? `${snapshot.activeCoupon.usedCount}장 사용됨`
+                      : '아래 쿠폰 설정에서 발행할 수 있습니다.'}
+                  </small>
+                </article>
+                <article className="admin-metric-card stock-metric">
+                  <span>재고 현황</span>
+                  <h3>{lowestStockProduct?.name ?? '등록 상품 없음'}</h3>
+                  <strong>{lowestStockProduct?.stock ?? 0}개</strong>
+                  <small>현재 가장 적은 총 재고</small>
+                </article>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

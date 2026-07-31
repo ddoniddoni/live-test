@@ -8,6 +8,7 @@ import {
   type Order,
   type Product,
 } from '@liveflow/contracts';
+import { useId } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { ApiRequestError, createMockOrder, liveSnapshotQueryKey } from '../lib/live-api';
 
@@ -27,6 +28,7 @@ type MockOrderFormProps = {
   liveId: string;
   liveStatus: 'READY' | 'LIVE' | 'ENDED';
   product: Product;
+  variant?: 'default' | 'compact';
 };
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
@@ -53,7 +55,9 @@ export function MockOrderForm({
   liveId,
   liveStatus,
   product,
+  variant = 'default',
 }: MockOrderFormProps) {
+  const headingId = useId();
   const firstVariant = product.variants[0];
   const form = useForm<OrderFormValues>({
     defaultValues: {
@@ -114,11 +118,11 @@ export function MockOrderForm({
   }
 
   return (
-    <section className="mock-order" aria-labelledby="mock-order-heading">
+    <section className={`mock-order mock-order-${variant}`} aria-labelledby={headingId}>
       <div className="mock-order-heading">
         <div>
           <p className="panel-kicker">MOCK ORDER</p>
-          <h3 id="mock-order-heading">지금 주문하기</h3>
+          <h3 id={headingId}>지금 주문하기</h3>
         </div>
         <span>
           {activeCoupon?.status === 'PUBLISHED' ? '할인은 서버가 최종 확정' : '정가 기준'}
@@ -171,7 +175,9 @@ export function MockOrderForm({
                 ? '품절된 옵션입니다'
                 : liveStatus !== 'LIVE'
                   ? '주문할 수 없는 방송입니다'
-                  : 'Mock 주문 확정'}
+                  : variant === 'compact'
+                    ? '지금 구매'
+                    : 'Mock 주문 확정'}
         </button>
       </form>
 

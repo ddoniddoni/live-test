@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import type { Coupon } from '@liveflow/contracts';
+import type { Coupon, Product } from '@liveflow/contracts';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ChatPanel } from '../../../components/chat-panel';
@@ -15,6 +16,7 @@ import {
   liveSnapshotQueryKey,
 } from '../../../lib/live-api';
 import { type ConnectionState, useLiveRealtime } from '../../../lib/use-live-realtime';
+import { stitchAssets } from '../../../lib/stitch-assets';
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
   style: 'currency',
@@ -105,6 +107,44 @@ function ActiveCouponPanel({ coupon }: { coupon: Coupon | null }) {
   );
 }
 
+function MobileProductCard({
+  accessToken,
+  activeCoupon,
+  liveId,
+  liveStatus,
+  product,
+}: {
+  accessToken: string | null;
+  activeCoupon: Coupon | null;
+  liveId: string;
+  liveStatus: 'READY' | 'LIVE' | 'ENDED';
+  product: Product;
+}) {
+  return (
+    <article className="mobile-product-card">
+      <div className="mobile-product-image">
+        <Image alt="라이브 소개 상품" fill sizes="64px" src={stitchAssets.mobileProduct} />
+        <span>1</span>
+      </div>
+      <div className="mobile-product-copy">
+        <div>
+          <span>특가</span>
+          <strong>{product.name}</strong>
+        </div>
+        <p>{formatKrw(product.priceKrw)}</p>
+      </div>
+      <MockOrderForm
+        accessToken={accessToken}
+        activeCoupon={activeCoupon}
+        liveId={liveId}
+        liveStatus={liveStatus}
+        product={product}
+        variant="compact"
+      />
+    </article>
+  );
+}
+
 export function LiveViewer({ liveId }: { liveId: string }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -170,6 +210,9 @@ export function LiveViewer({ liveId }: { liveId: string }) {
             <span aria-hidden="true" />
             {liveStatusLabel}
           </span>
+          <span className="viewer-message-count">
+            메시지 {snapshotQuery.data.chat.messages.length}
+          </span>
         </div>
         <div className="topbar-actions">
           <span className={`connection-pill connection-${connectionState.toLowerCase()}`}>
@@ -182,29 +225,104 @@ export function LiveViewer({ liveId }: { liveId: string }) {
         </div>
       </header>
 
-      <section className="viewer-grid" aria-label="라이브 방송">
-        <div className="broadcast-stage">
-          <div className={`live-badge is-${live.status.toLowerCase()}`}>
-            <span aria-hidden="true" />
-            {liveStatusLabel}
+      <section className="viewer-layout" aria-label="라이브 방송">
+        <div className="viewer-main-column">
+          <section className="broadcast-stage" aria-label="라이브 영상 영역">
+            <Image
+              alt="상품을 소개하는 라이브 커머스 진행자"
+              className="viewer-live-image viewer-live-image-desktop"
+              fill
+              priority
+              sizes="(max-width: 760px) 1px, (max-width: 1280px) 66vw, 820px"
+              src={stitchAssets.viewerLive}
+            />
+            <Image
+              alt="상품을 소개하는 모바일 라이브 커머스 진행자"
+              className="viewer-live-image viewer-live-image-mobile"
+              fill
+              sizes="(max-width: 760px) 100vw, 1px"
+              src={stitchAssets.mobileLive}
+            />
+            <div className="stage-gradient" aria-hidden="true" />
+
+            <div className="stage-desktop-overlay">
+              <div className={`live-badge is-${live.status.toLowerCase()}`}>
+                <span aria-hidden="true" />
+                {live.status === 'LIVE' ? '특가 방송 진행중' : liveStatusLabel}
+              </div>
+              <div className="stage-now-showing">
+                <span>NOW SHOWING</span>
+                <strong>{featuredProduct?.name ?? live.title}</strong>
+                <small>{featuredProduct ? '라이브 전용 혜택을 확인해 보세요' : live.title}</small>
+              </div>
+            </div>
+
+            <div className="mobile-live-header">
+              <div>
+                <div className="mobile-host-chip">
+                  <span className="mobile-host-avatar">
+                    <Image alt="라이브 진행자" fill sizes="32px" src={stitchAssets.mobileHost} />
+                  </span>
+                  <strong>뷰티플로우</strong>
+                </div>
+                <span className={`mobile-live-badge is-${live.status.toLowerCase()}`}>
+                  <span aria-hidden="true" />
+                  {liveStatusLabel}
+                </span>
+              </div>
+              <div className="mobile-live-actions">
+                <span>{connectionLabel(connectionState)}</span>
+                <Link aria-label="라이브 나가기" href="/">
+                  ×
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          <div className="viewer-commerce-grid">
+            <section className="featured-section" aria-labelledby="featured-heading">
+              <div className="section-heading">
+                <div>
+                  <p className="panel-kicker">NOW SHOWING</p>
+                  <h2 id="featured-heading">현재 소개 상품</h2>
+                </div>
+                <span className="featured-live-note">실시간 재고 반영</span>
+              </div>
+
+              {featuredProduct ? (
+                <article className="featured-product">
+                  <div className="product-art product-art-viewer">
+                    <Image
+                      alt={`${featuredProduct.name} 상품 이미지`}
+                      fill
+                      sizes="180px"
+                      src={stitchAssets.viewerProduct}
+                    />
+                    <small>품절 임박</small>
+                  </div>
+                  <div className="product-copy">
+                    <p className="product-name">{featuredProduct.name}</p>
+                    <p>{featuredProduct.description}</p>
+                    <strong>{formatKrw(featuredProduct.priceKrw)}</strong>
+                    <MockOrderForm
+                      activeCoupon={activeCoupon}
+                      accessToken={accessToken}
+                      key={featuredProduct.id}
+                      liveId={live.id}
+                      liveStatus={live.status}
+                      product={featuredProduct}
+                    />
+                  </div>
+                </article>
+              ) : (
+                <div className="empty-product">
+                  운영자가 상품을 소개하면 이 영역이 페이지 새로고침 없이 바뀝니다.
+                </div>
+              )}
+            </section>
+
+            <ActiveCouponPanel coupon={activeCoupon} />
           </div>
-          <p className="stage-kicker">LIVE COMMERCE · LIVEFLOW EDIT</p>
-          <h1>{live.title}</h1>
-          <p>
-            {featuredProduct
-              ? `${featuredProduct.name}을(를) 지금 소개하고 있어요.`
-              : '라이브에서 소개하는 상품과 한정 혜택을 확인해 보세요.'}
-          </p>
-          <div className="stage-now-showing">
-            <span>NOW SHOWING</span>
-            <strong>{featuredProduct?.name ?? 'LIVEFLOW SELECT'}</strong>
-          </div>
-          <span aria-hidden="true" className="stage-brand-mark">
-            LF
-          </span>
-          <div className="stage-orb stage-orb-one" aria-hidden="true" />
-          <div className="stage-orb stage-orb-two" aria-hidden="true" />
-          <div className="stage-orb stage-orb-three" aria-hidden="true" />
         </div>
 
         <ChatPanel
@@ -216,6 +334,17 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           liveId={liveId}
           hasMore={snapshotQuery.data.chat.hasMore}
           messages={snapshotQuery.data.chat.messages}
+          mobileAccessory={
+            featuredProduct ? (
+              <MobileProductCard
+                accessToken={accessToken}
+                activeCoupon={activeCoupon}
+                liveId={live.id}
+                liveStatus={live.status}
+                product={featuredProduct}
+              />
+            ) : null
+          }
           sessionError={sessionError}
           variant="viewer"
         />
@@ -226,46 +355,6 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           {sessionError}
         </p>
       ) : null}
-
-      <div className="viewer-commerce-grid">
-        <section className="featured-section" aria-labelledby="featured-heading">
-          <div className="section-heading">
-            <div>
-              <p className="panel-kicker">NOW SHOWING</p>
-              <h2 id="featured-heading">현재 소개 상품</h2>
-            </div>
-            <span className="featured-live-note">실시간 재고 반영</span>
-          </div>
-
-          {featuredProduct ? (
-            <article className="featured-product">
-              <div className="product-art product-art-viewer" aria-hidden="true">
-                <span>{featuredProduct.name.slice(0, 1)}</span>
-                <small>LIVE PICK</small>
-              </div>
-              <div className="product-copy">
-                <p className="product-name">{featuredProduct.name}</p>
-                <p>{featuredProduct.description}</p>
-                <strong>{formatKrw(featuredProduct.priceKrw)}</strong>
-                <MockOrderForm
-                  activeCoupon={activeCoupon}
-                  accessToken={accessToken}
-                  key={featuredProduct.id}
-                  liveId={live.id}
-                  liveStatus={live.status}
-                  product={featuredProduct}
-                />
-              </div>
-            </article>
-          ) : (
-            <div className="empty-product">
-              운영자가 상품을 소개하면 이 영역이 페이지 새로고침 없이 바뀝니다.
-            </div>
-          )}
-        </section>
-
-        <ActiveCouponPanel coupon={activeCoupon} />
-      </div>
     </main>
   );
 }
