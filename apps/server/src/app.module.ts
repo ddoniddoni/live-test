@@ -1,5 +1,7 @@
-import { DynamicModule, Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
+import type { DynamicModule } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+
 import { AuthService } from './auth.service.js';
 import { LiveController } from './live.controller.js';
 import { LiveService } from './live.service.js';

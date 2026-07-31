@@ -1,10 +1,12 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { type Virtualizer, useVirtualizer } from '@tanstack/react-virtual';
-import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
 import { forwardRef, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { fetchChatMessages, liveSnapshotQueryKey, prependChatMessagePage } from '../lib/live-api';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import type { Virtualizer } from '@tanstack/react-virtual';
+import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
+
+import { fetchChatMessages, liveSnapshotQueryKey, prependChatMessagePage } from '@/lib/live-api';
 
 export type PendingChatMessage = {
   clientMessageId: string;

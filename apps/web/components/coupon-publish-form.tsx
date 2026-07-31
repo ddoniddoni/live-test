@@ -1,11 +1,11 @@
 'use client';
 
+import { useForm } from 'react-hook-form';
 import {
   publishCouponRequestSchema,
   type Coupon,
   type PublishCouponRequest,
 } from '@liveflow/contracts';
-import { useForm } from 'react-hook-form';
 
 type CouponFormValues = {
   type: Coupon['type'];

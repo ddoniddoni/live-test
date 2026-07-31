@@ -17,6 +17,7 @@ import type {
   ProductFeaturedEvent,
 } from '@liveflow/contracts';
 import { prisma } from '@liveflow/database';
+
 import { calculateOrderPricing } from './order-pricing.js';
 
 type ProductRecord = {

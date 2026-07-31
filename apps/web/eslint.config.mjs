@@ -4,4 +4,14 @@ import nextVitals from 'eslint-config-next/core-web-vitals';
 export default defineConfig([
   ...nextVitals,
   globalIgnores(['.next/**', 'node_modules/**', 'coverage/**']),
+  {
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: ['../**'],
+        },
+      ],
+    },
+  },
 ]);

@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   createOrderRequestSchema,
@@ -8,9 +9,9 @@ import {
   type Order,
   type Product,
 } from '@liveflow/contracts';
-import { useId } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
-import { ApiRequestError, createMockOrder, liveSnapshotQueryKey } from '../lib/live-api';
+
+import { ApiRequestError, createMockOrder, liveSnapshotQueryKey } from '@/lib/live-api';
 
 type OrderFormValues = {
   productVariantId: string;

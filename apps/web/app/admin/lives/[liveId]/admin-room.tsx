@@ -1,12 +1,14 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { LiveSnapshot } from '@liveflow/contracts';
 import Image from 'next/image';
 import Link from 'next/link';
-import { type FormEvent, useState } from 'react';
-import { ChatPanel } from '../../../../components/chat-panel';
-import { CouponPublishForm } from '../../../../components/coupon-publish-form';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { LiveSnapshot } from '@liveflow/contracts';
+
+import { ChatPanel } from '@/components/chat-panel';
+import { CouponPublishForm } from '@/components/coupon-publish-form';
 import {
   ApiRequestError,
   createAdminSession,
@@ -19,9 +21,10 @@ import {
   mergeProductFeaturedEvent,
   publishCoupon,
   timeoutChatUser,
-} from '../../../../lib/live-api';
-import { useLiveRealtime } from '../../../../lib/use-live-realtime';
-import { stitchAssets } from '../../../../lib/stitch-assets';
+} from '@/lib/live-api';
+import { useLiveRealtime } from '@/lib/use-live-realtime';
+import { stitchAssets } from '@/lib/stitch-assets';
+
 import { AdminProductControl, AdminSidebar } from './admin-room-sections';
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {

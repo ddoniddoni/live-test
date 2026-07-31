@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ChatMessage, ChatMessagesQuery, Coupon } from '@liveflow/contracts';
+
 import type { LiveRepository } from './live-repository.js';
 import { LIVE_REPOSITORY } from './server-configuration.js';
 

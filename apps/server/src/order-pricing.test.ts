@@ -1,5 +1,6 @@
 import type { Coupon } from '@liveflow/contracts';
 import { describe, expect, it } from 'vitest';
+
 import { calculateOrderPricing } from './order-pricing.js';
 
 const now = new Date('2026-07-31T00:30:00.000Z');

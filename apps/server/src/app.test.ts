@@ -11,6 +11,7 @@ import type {
   ProductFeaturedEvent,
 } from '@liveflow/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import { buildServer } from './app.js';
 import { AuthService } from './auth.service.js';
 import { LiveGateway } from './live.gateway.js';

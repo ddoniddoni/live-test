@@ -1,10 +1,10 @@
 import 'reflect-metadata';
-
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { ServerOptions } from 'socket.io';
+
 import { LiveFlowModule } from './app.module.js';
 import { ApiExceptionFilter } from './api-exception.filter.js';
 import { prismaLiveRepository, type LiveRepository } from './live-repository.js';

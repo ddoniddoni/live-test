@@ -1,10 +1,11 @@
 'use client';
 
-import type { LiveSnapshot } from '@liveflow/contracts';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { FormEventHandler } from 'react';
-import { stitchAssets } from '../../../../lib/stitch-assets';
+import type { LiveSnapshot } from '@liveflow/contracts';
+
+import { stitchAssets } from '@/lib/stitch-assets';
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
   style: 'currency',

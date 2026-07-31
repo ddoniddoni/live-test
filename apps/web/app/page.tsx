@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 const capabilities = [
   {
     title: 'Viewer experience',
@@ -47,4 +49,3 @@ export default function Home() {
     </main>
   );
 }
-import Link from 'next/link';

@@ -6,6 +6,7 @@ import type {
   LiveSnapshot,
 } from '@liveflow/contracts';
 import { describe, expect, it } from 'vitest';
+
 import {
   chatAccessQueryKey,
   mergeChatMessageHiddenEvent,

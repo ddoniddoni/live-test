@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+
 import { logServerStartFailure } from './app.js';
 
 const environmentFilePath = fileURLToPath(new URL('../../../.env', import.meta.url));

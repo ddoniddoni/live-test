@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   realtimeEventSchema,
@@ -7,8 +8,8 @@ import {
   type ChatMessagePage,
   type LiveSnapshot,
 } from '@liveflow/contracts';
-import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
+
 import {
   chatAccessQueryKey,
   fetchChatMessages,

@@ -1,7 +1,5 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -10,16 +8,20 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  type PendingChatMessage,
-  VirtualizedChatMessageList,
-} from './virtualized-chat-message-list';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
+
 import {
   ApiRequestError,
   createChatMessage,
   liveSnapshotQueryKey,
   mergeChatMessage,
-} from '../lib/live-api';
+} from '@/lib/live-api';
+
+import {
+  type PendingChatMessage,
+  VirtualizedChatMessageList,
+} from './virtualized-chat-message-list';
 
 type ChatPanelProps = {
   liveId: string;

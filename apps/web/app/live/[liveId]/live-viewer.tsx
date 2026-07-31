@@ -1,12 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import type { Coupon, Product } from '@liveflow/contracts';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ChatPanel } from '../../../components/chat-panel';
-import { MockOrderForm } from '../../../components/mock-order-form';
+import { useQuery } from '@tanstack/react-query';
+import type { Coupon, Product } from '@liveflow/contracts';
+
+import { ChatPanel } from '@/components/chat-panel';
+import { MockOrderForm } from '@/components/mock-order-form';
 import {
   ApiRequestError,
   chatAccessQueryKey,
@@ -14,9 +15,10 @@ import {
   fetchChatAccess,
   fetchLiveSnapshot,
   liveSnapshotQueryKey,
-} from '../../../lib/live-api';
-import { type ConnectionState, useLiveRealtime } from '../../../lib/use-live-realtime';
-import { stitchAssets } from '../../../lib/stitch-assets';
+} from '@/lib/live-api';
+import { useLiveRealtime } from '@/lib/use-live-realtime';
+import type { ConnectionState } from '@/lib/use-live-realtime';
+import { stitchAssets } from '@/lib/stitch-assets';
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
   style: 'currency',

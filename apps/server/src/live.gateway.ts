@@ -7,6 +7,7 @@ import {
 } from '@nestjs/websockets';
 import { liveJoinRequestSchema, type RealtimeEvent } from '@liveflow/contracts';
 import type { Server, Socket } from 'socket.io';
+
 import { AuthService } from './auth.service.js';
 import { LiveService } from './live.service.js';
 import type { DemoAccessToken } from './server-configuration.js';

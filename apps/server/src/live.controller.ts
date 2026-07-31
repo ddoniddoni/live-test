@@ -38,6 +38,7 @@ import {
   publishCouponRequestSchema,
 } from '@liveflow/contracts';
 import type { FastifyRequest } from 'fastify';
+
 import { ApiException } from './api-exception.filter.js';
 import { AuthService } from './auth.service.js';
 import { LiveGateway } from './live.gateway.js';
