@@ -1,4 +1,14 @@
+import { LOW_STOCK_THRESHOLD, aiChatSummarySchema } from '@liveflow/contracts';
 import type {
+  AdminOrder,
+  AiChatSummary,
+  AiSuggestion,
+  AiSuggestionCreatedEvent,
+  Announcement,
+  AnnouncementPublishedEvent,
+  AuditLog,
+  AuditLogPage,
+  AuditLogsQuery,
   ChatAccessStatus,
   ChatMessage,
   ChatMessageCreatedEvent,
@@ -10,11 +20,17 @@ import type {
   CouponPublishedEvent,
   CouponRedeemedEvent,
   InventoryUpdatedEvent,
+  InventoryLowEvent,
+  LiveStatusChangedEvent,
   LiveSnapshot,
+  LiveStatusTransitionAction,
   Order,
+  OrderCreatedEvent,
   OrderStatusChangedEvent,
+  OrdersQuery,
   Product,
   ProductFeaturedEvent,
+  ReviewAiSuggestionRequest,
 } from '@liveflow/contracts';
 import { prisma } from '@liveflow/database';
 
@@ -43,6 +59,29 @@ type CouponRecord = {
   usageLimit: number | null;
   usedCount: number;
   status: Coupon['status'];
+};
+
+type AnnouncementRecord = {
+  id: string;
+  liveId: string;
+  content: string;
+  createdById: string;
+  sourceSuggestionId: string | null;
+  createdAt: Date;
+};
+
+type AiSuggestionRecord = {
+  id: string;
+  liveId: string;
+  type: AiSuggestion['type'];
+  provider: string;
+  modelOrMockVersion: string;
+  inputHash: string;
+  outputJson: unknown;
+  status: AiSuggestion['status'];
+  reviewedById: string | null;
+  reviewedAt: Date | null;
+  createdAt: Date;
 };
 
 type LiveRecord = {
@@ -94,6 +133,19 @@ type OrderRecord = {
   }>;
 };
 
+type AuditLogRecord = {
+  id: string;
+  liveId: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  createdAt: Date;
+  actor: {
+    id: string;
+    nickname: string;
+  };
+};
+
 export type FeatureProductResult =
   | {
       kind: 'featured';
@@ -106,6 +158,18 @@ export type FeatureProductResult =
       kind: 'product_not_found';
     };
 
+export type ChangeLiveStatusResult =
+  | {
+      kind: 'changed';
+      event: LiveStatusChangedEvent;
+    }
+  | {
+      kind: 'live_not_found';
+    }
+  | {
+      kind: 'invalid_status_transition';
+    };
+
 export type PublishCouponResult =
   | {
       kind: 'published';
@@ -116,6 +180,15 @@ export type PublishCouponResult =
     }
   | {
       kind: 'coupon_not_publishable';
+    };
+
+export type PublishAnnouncementResult =
+  | {
+      kind: 'published';
+      event: AnnouncementPublishedEvent;
+    }
+  | {
+      kind: 'live_not_found';
     };
 
 export type CreateChatMessageResult =
@@ -143,8 +216,10 @@ export type CreateOrderResult =
       kind: 'created';
       order: Order;
       inventoryEvent: InventoryUpdatedEvent;
+      inventoryLowEvent: InventoryLowEvent | null;
       couponEvent: CouponRedeemedEvent | null;
       orderEvent: OrderStatusChangedEvent;
+      adminOrderEvent: OrderCreatedEvent;
     }
   | {
       kind: 'idempotent';
@@ -208,6 +283,60 @@ export type TimeoutChatUserResult =
       kind: 'user_not_timeoutable';
     };
 
+export type GetAiSuggestionsResult =
+  | {
+      kind: 'found';
+      suggestions: AiSuggestion[];
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
+export type GetAuditLogsResult =
+  | {
+      kind: 'found';
+      page: AuditLogPage;
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
+export type GetOrdersResult =
+  | {
+      kind: 'found';
+      orders: AdminOrder[];
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
+export type CreateAiSuggestionResult =
+  | {
+      kind: 'created';
+      suggestion: AiSuggestion;
+      event: AiSuggestionCreatedEvent;
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
+export type ReviewAiSuggestionResult =
+  | {
+      kind: 'approved';
+      suggestion: AiSuggestion;
+      event: AnnouncementPublishedEvent;
+    }
+  | {
+      kind: 'rejected';
+      suggestion: AiSuggestion;
+    }
+  | {
+      kind: 'suggestion_not_found';
+    }
+  | {
+      kind: 'suggestion_not_reviewable';
+    };
+
 export interface LiveRepository {
   getSnapshot(liveId: string): Promise<LiveSnapshot | null>;
   getMessages(liveId: string, query: ChatMessagesQuery): Promise<ChatMessagePage | null>;
@@ -226,6 +355,7 @@ export interface LiveRepository {
     quantity: number;
     idempotencyKey: string;
   }): Promise<CreateOrderResult>;
+  getRecentOrders(liveId: string, query: OrdersQuery): Promise<GetOrdersResult>;
   hideMessage(input: {
     liveId: string;
     messageId: string;
@@ -248,11 +378,37 @@ export interface LiveRepository {
     endsAt: string;
     usageLimit: number | null;
   }): Promise<PublishCouponResult>;
+  publishAnnouncement(input: {
+    liveId: string;
+    actorId: string;
+    content: string;
+  }): Promise<PublishAnnouncementResult>;
   featureProduct(input: {
     liveId: string;
     productId: string | null;
     actorId: string;
   }): Promise<FeatureProductResult>;
+  changeLiveStatus(input: {
+    liveId: string;
+    actorId: string;
+    action: LiveStatusTransitionAction;
+  }): Promise<ChangeLiveStatusResult>;
+  getAuditLogs(liveId: string, query: AuditLogsQuery): Promise<GetAuditLogsResult>;
+  getAiSuggestions(liveId: string): Promise<GetAiSuggestionsResult>;
+  createAiSuggestion(input: {
+    liveId: string;
+    actorId: string;
+    inputHash: string;
+    output: AiChatSummary;
+  }): Promise<CreateAiSuggestionResult>;
+  reviewAiSuggestion(input: {
+    suggestionId: string;
+    actorId: string;
+    action: ReviewAiSuggestionRequest['action'];
+    editedOutput?: AiChatSummary | undefined;
+    announcementContent?: string | undefined;
+    reason?: string | undefined;
+  }): Promise<ReviewAiSuggestionResult>;
 }
 
 function toProductDto(product: ProductRecord): Product {
@@ -269,6 +425,22 @@ function toProductDto(product: ProductRecord): Product {
   };
 }
 
+function toLiveSessionDto(live: {
+  id: string;
+  title: string;
+  status: LiveSnapshot['live']['status'];
+  startedAt: Date | null;
+  endedAt: Date | null;
+}): LiveSnapshot['live'] {
+  return {
+    id: live.id,
+    title: live.title,
+    status: live.status,
+    startedAt: live.startedAt?.toISOString() ?? null,
+    endedAt: live.endedAt?.toISOString() ?? null,
+  };
+}
+
 function toCouponDto(coupon: CouponRecord): Coupon {
   return {
     id: coupon.id,
@@ -281,6 +453,45 @@ function toCouponDto(coupon: CouponRecord): Coupon {
     usageLimit: coupon.usageLimit,
     usedCount: coupon.usedCount,
     status: coupon.status,
+  };
+}
+
+function toAnnouncementDto(announcement: AnnouncementRecord): Announcement {
+  return {
+    id: announcement.id,
+    liveId: announcement.liveId,
+    content: announcement.content,
+    createdBy: announcement.createdById,
+    sourceSuggestionId: announcement.sourceSuggestionId,
+    createdAt: announcement.createdAt.toISOString(),
+  };
+}
+
+function toAuditLogDto(log: AuditLogRecord): AuditLog {
+  return {
+    id: log.id,
+    liveId: log.liveId,
+    actor: log.actor,
+    action: log.action,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    createdAt: log.createdAt.toISOString(),
+  };
+}
+
+function toAiSuggestionDto(suggestion: AiSuggestionRecord): AiSuggestion {
+  return {
+    id: suggestion.id,
+    liveId: suggestion.liveId,
+    type: suggestion.type,
+    provider: suggestion.provider,
+    modelOrMockVersion: suggestion.modelOrMockVersion,
+    inputHash: suggestion.inputHash,
+    output: aiChatSummarySchema.parse(suggestion.outputJson),
+    status: suggestion.status,
+    reviewedBy: suggestion.reviewedById,
+    reviewedAt: suggestion.reviewedAt?.toISOString() ?? null,
+    createdAt: suggestion.createdAt.toISOString(),
   };
 }
 
@@ -322,6 +533,15 @@ function toOrderDto(order: OrderRecord): Order {
   };
 }
 
+function toAdminOrderDto(
+  order: OrderRecord & { user: { id: string; nickname: string } },
+): AdminOrder {
+  return {
+    ...toOrderDto(order),
+    customer: order.user,
+  };
+}
+
 function toChatPage(room: ChatRoomSnapshot | null, liveId: string): ChatMessagePage {
   if (!room) {
     return {
@@ -346,17 +566,13 @@ function toSnapshot(
   products: ProductRecord[],
   chatRoom: ChatRoomSnapshot | null,
   activeCoupon: CouponRecord | null,
+  latestAnnouncement: AnnouncementRecord | null,
 ): LiveSnapshot {
   return {
-    live: {
-      id: live.id,
-      title: live.title,
-      status: live.status,
-      startedAt: live.startedAt?.toISOString() ?? null,
-      endedAt: live.endedAt?.toISOString() ?? null,
-    },
+    live: toLiveSessionDto(live),
     featuredProduct: live.featuredProduct ? toProductDto(live.featuredProduct) : null,
     activeCoupon: activeCoupon ? toCouponDto(activeCoupon) : null,
+    latestAnnouncement: latestAnnouncement ? toAnnouncementDto(latestAnnouncement) : null,
     products: products.map(toProductDto),
     lastEventSequence: live.nextEventSequence - 1,
     chat: toChatPage(chatRoom, live.id),
@@ -399,10 +615,20 @@ const orderRecordInclude = {
   },
 } as const;
 
+const adminOrderRecordInclude = {
+  ...orderRecordInclude,
+  user: {
+    select: {
+      id: true,
+      nickname: true,
+    },
+  },
+} as const;
+
 export const prismaLiveRepository: LiveRepository = {
   async getSnapshot(liveId) {
     const now = new Date();
-    const [live, products, chatRoom, activeCoupon] = await Promise.all([
+    const [live, products, chatRoom, activeCoupon, latestAnnouncement] = await Promise.all([
       prisma.liveSession.findUnique({
         where: { id: liveId },
         include: {
@@ -444,9 +670,13 @@ export const prismaLiveRepository: LiveRepository = {
         },
         orderBy: { createdAt: 'desc' },
       }),
+      prisma.announcement.findFirst({
+        where: { liveId },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
 
-    return live ? toSnapshot(live, products, chatRoom, activeCoupon) : null;
+    return live ? toSnapshot(live, products, chatRoom, activeCoupon, latestAnnouncement) : null;
   },
 
   async getMessages(liveId, query) {
@@ -705,7 +935,10 @@ export const prismaLiveRepository: LiveRepository = {
             where: { id: liveId },
             select: { id: true, status: true, featuredProductId: true },
           }),
-          transaction.user.findUnique({ where: { id: userId }, select: { id: true } }),
+          transaction.user.findUnique({
+            where: { id: userId },
+            select: { id: true, nickname: true },
+          }),
           transaction.productVariant.findUnique({
             where: { id: productVariantId },
             include: {
@@ -840,8 +1073,29 @@ export const prismaLiveRepository: LiveRepository = {
           include: orderRecordInclude,
         });
         const orderDto = toOrderDto(order);
+        const adminOrderDto: AdminOrder = {
+          ...orderDto,
+          customer: {
+            id: user.id,
+            nickname: user.nickname,
+          },
+        };
 
-        const eventCount = redeemedCoupon ? 3 : 2;
+        const inventoryLowPayload: InventoryLowEvent['payload'] | null =
+          updatedVariant.stock <= LOW_STOCK_THRESHOLD &&
+          updatedVariant.stock + quantity > LOW_STOCK_THRESHOLD
+            ? {
+                productId: variant.product.id,
+                productName: variant.product.name,
+                productVariantId,
+                variantName: variant.name,
+                stock: updatedVariant.stock,
+                threshold: LOW_STOCK_THRESHOLD,
+              }
+            : null;
+
+        const eventCount =
+          3 + Number(redeemedCoupon !== null) + Number(inventoryLowPayload !== null);
         const updatedLive = await transaction.liveSession.update({
           where: { id: liveId },
           data: { nextEventSequence: { increment: eventCount } },
@@ -876,12 +1130,32 @@ export const prismaLiveRepository: LiveRepository = {
         const orderEvent = await transaction.realtimeEvent.create({
           data: {
             liveId,
-            sequence: updatedLive.nextEventSequence - 1,
+            sequence: couponEvent ? couponEvent.sequence + 1 : inventoryEvent.sequence + 1,
             type: 'order.status.changed',
             payloadJson: { order: orderDto },
             occurredAt,
           },
         });
+        const adminOrderEvent = await transaction.realtimeEvent.create({
+          data: {
+            liveId,
+            sequence: orderEvent.sequence + 1,
+            type: 'order.created',
+            payloadJson: { order: adminOrderDto },
+            occurredAt,
+          },
+        });
+        const inventoryLowEvent = inventoryLowPayload
+          ? await transaction.realtimeEvent.create({
+              data: {
+                liveId,
+                sequence: adminOrderEvent.sequence + 1,
+                type: 'inventory.low',
+                payloadJson: inventoryLowPayload,
+                occurredAt,
+              },
+            })
+          : null;
 
         await transaction.auditLog.create({
           data: {
@@ -925,6 +1199,17 @@ export const prismaLiveRepository: LiveRepository = {
                   payload: { coupon: redeemedCoupon },
                 }
               : null,
+          inventoryLowEvent:
+            inventoryLowEvent && inventoryLowPayload
+              ? {
+                  eventId: inventoryLowEvent.id,
+                  liveId,
+                  sequence: inventoryLowEvent.sequence,
+                  type: 'inventory.low',
+                  occurredAt: inventoryLowEvent.occurredAt.toISOString(),
+                  payload: inventoryLowPayload,
+                }
+              : null,
           orderEvent: {
             eventId: orderEvent.id,
             liveId,
@@ -932,6 +1217,14 @@ export const prismaLiveRepository: LiveRepository = {
             type: 'order.status.changed',
             occurredAt: orderEvent.occurredAt.toISOString(),
             payload: { order: orderDto },
+          },
+          adminOrderEvent: {
+            eventId: adminOrderEvent.id,
+            liveId,
+            sequence: adminOrderEvent.sequence,
+            type: 'order.created',
+            occurredAt: adminOrderEvent.occurredAt.toISOString(),
+            payload: { order: adminOrderDto },
           },
         } as const;
       });
@@ -956,6 +1249,27 @@ export const prismaLiveRepository: LiveRepository = {
 
       return { kind: 'idempotent', order: toOrderDto(persistedOrder) } as const;
     }
+  },
+
+  async getRecentOrders(liveId, query) {
+    const [live, orders] = await Promise.all([
+      prisma.liveSession.findUnique({ where: { id: liveId }, select: { id: true } }),
+      prisma.order.findMany({
+        where: { liveId },
+        orderBy: { createdAt: 'desc' },
+        take: query.limit,
+        include: adminOrderRecordInclude,
+      }),
+    ]);
+
+    if (!live) {
+      return { kind: 'live_not_found' } as const;
+    }
+
+    return {
+      kind: 'found',
+      orders: orders.map(toAdminOrderDto),
+    } as const;
   },
 
   async hideMessage({ liveId, messageId, actorId, reason }) {
@@ -1231,6 +1545,74 @@ export const prismaLiveRepository: LiveRepository = {
     });
   },
 
+  async publishAnnouncement({ liveId, actorId, content }) {
+    return prisma.$transaction(async (transaction) => {
+      // Advancing the sequence serializes announcements from concurrent admins before they reach
+      // the public room.
+      const updatedLive = await transaction.liveSession
+        .update({
+          where: { id: liveId },
+          data: { nextEventSequence: { increment: 1 } },
+          select: { nextEventSequence: true },
+        })
+        .catch((error: unknown) => {
+          if (isRecordNotFoundError(error)) {
+            return null;
+          }
+
+          throw error;
+        });
+
+      if (!updatedLive) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      const announcement = await transaction.announcement.create({
+        data: {
+          liveId,
+          content,
+          createdById: actorId,
+          sourceSuggestionId: null,
+        },
+      });
+      const announcementDto = toAnnouncementDto(announcement);
+      const event = await transaction.realtimeEvent.create({
+        data: {
+          liveId,
+          sequence: updatedLive.nextEventSequence - 1,
+          type: 'announcement.published',
+          payloadJson: { announcement: announcementDto },
+        },
+      });
+
+      await transaction.auditLog.create({
+        data: {
+          liveId,
+          actorId,
+          action: 'ANNOUNCEMENT_PUBLISHED',
+          entityType: 'ANNOUNCEMENT',
+          entityId: announcement.id,
+          afterJson: {
+            content: announcementDto.content,
+            sourceSuggestionId: null,
+          },
+        },
+      });
+
+      return {
+        kind: 'published',
+        event: {
+          eventId: event.id,
+          liveId,
+          sequence: event.sequence,
+          type: 'announcement.published',
+          occurredAt: event.occurredAt.toISOString(),
+          payload: { announcement: announcementDto },
+        },
+      } as const;
+    });
+  },
+
   async featureProduct({ liveId, productId, actorId }) {
     return prisma.$transaction(async (transaction) => {
       const liveBefore = await transaction.liveSession.findUnique({
@@ -1301,6 +1683,394 @@ export const prismaLiveRepository: LiveRepository = {
           type: 'product.featured',
           occurredAt: event.occurredAt.toISOString(),
           payload: eventPayload,
+        },
+      } as const;
+    });
+  },
+
+  async changeLiveStatus({ liveId, actorId, action }) {
+    const expectedStatus = action === 'START' ? 'READY' : 'LIVE';
+    const nextStatus = action === 'START' ? 'LIVE' : 'ENDED';
+    const occurredAt = new Date();
+
+    return prisma.$transaction(async (transaction) => {
+      const liveBefore = await transaction.liveSession.findUnique({
+        where: { id: liveId },
+        select: { id: true, status: true, startedAt: true, endedAt: true },
+      });
+
+      if (!liveBefore) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      if (liveBefore.status !== expectedStatus) {
+        return { kind: 'invalid_status_transition' } as const;
+      }
+
+      const statusUpdate = await transaction.liveSession.updateMany({
+        where: { id: liveId, status: expectedStatus },
+        data:
+          action === 'START'
+            ? {
+                status: nextStatus,
+                startedAt: occurredAt,
+                nextEventSequence: { increment: 1 },
+              }
+            : {
+                status: nextStatus,
+                endedAt: occurredAt,
+                nextEventSequence: { increment: 1 },
+              },
+      });
+
+      if (statusUpdate.count === 0) {
+        return { kind: 'invalid_status_transition' } as const;
+      }
+
+      const liveAfter = await transaction.liveSession.findUnique({
+        where: { id: liveId },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          startedAt: true,
+          endedAt: true,
+          nextEventSequence: true,
+        },
+      });
+
+      if (!liveAfter) {
+        throw new Error('Live session disappeared after its status was updated.');
+      }
+
+      const liveDto = toLiveSessionDto(liveAfter);
+      const event = await transaction.realtimeEvent.create({
+        data: {
+          liveId,
+          sequence: liveAfter.nextEventSequence - 1,
+          type: 'live.status.changed',
+          payloadJson: { live: liveDto },
+          occurredAt,
+        },
+      });
+
+      await transaction.auditLog.create({
+        data: {
+          liveId,
+          actorId,
+          action: action === 'START' ? 'LIVE_STARTED' : 'LIVE_ENDED',
+          entityType: 'LIVE_SESSION',
+          entityId: liveId,
+          beforeJson: {
+            status: liveBefore.status,
+            startedAt: liveBefore.startedAt?.toISOString() ?? null,
+            endedAt: liveBefore.endedAt?.toISOString() ?? null,
+          },
+          afterJson: {
+            status: liveDto.status,
+            startedAt: liveDto.startedAt,
+            endedAt: liveDto.endedAt,
+          },
+        },
+      });
+
+      return {
+        kind: 'changed',
+        event: {
+          eventId: event.id,
+          liveId,
+          sequence: event.sequence,
+          type: 'live.status.changed',
+          occurredAt: event.occurredAt.toISOString(),
+          payload: { live: liveDto },
+        },
+      } as const;
+    });
+  },
+
+  async getAuditLogs(liveId, query) {
+    const [live, rows] = await Promise.all([
+      prisma.liveSession.findUnique({
+        where: { id: liveId },
+        select: { id: true },
+      }),
+      prisma.auditLog.findMany({
+        where: { liveId },
+        select: {
+          id: true,
+          liveId: true,
+          action: true,
+          entityType: true,
+          entityId: true,
+          createdAt: true,
+          actor: {
+            select: {
+              id: true,
+              nickname: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        ...(query.cursor
+          ? {
+              cursor: { id: query.cursor },
+              skip: 1,
+            }
+          : {}),
+      }),
+    ]);
+
+    if (!live) {
+      return { kind: 'live_not_found' } as const;
+    }
+
+    const hasMore = rows.length > query.limit;
+    const logs = rows.slice(0, query.limit).map(toAuditLogDto);
+    const lastLog = logs.at(-1);
+
+    return {
+      kind: 'found',
+      page: {
+        logs,
+        nextCursor: hasMore && lastLog ? lastLog.id : null,
+      },
+    } as const;
+  },
+
+  async getAiSuggestions(liveId) {
+    const [live, suggestions] = await Promise.all([
+      prisma.liveSession.findUnique({ where: { id: liveId }, select: { id: true } }),
+      prisma.aiSuggestion.findMany({
+        where: { liveId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    if (!live) {
+      return { kind: 'live_not_found' } as const;
+    }
+
+    return {
+      kind: 'found',
+      suggestions: suggestions.map(toAiSuggestionDto),
+    } as const;
+  },
+
+  async createAiSuggestion({ liveId, actorId, inputHash, output }) {
+    return prisma.$transaction(async (transaction) => {
+      const live = await transaction.liveSession.findUnique({
+        where: { id: liveId },
+        select: { id: true },
+      });
+
+      if (!live) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      const suggestion = await transaction.aiSuggestion.create({
+        data: {
+          liveId,
+          type: 'CHAT_SUMMARY',
+          provider: 'mock',
+          modelOrMockVersion: 'chat-summary-v1',
+          inputHash,
+          outputJson: output,
+        },
+      });
+      const suggestionDto = toAiSuggestionDto(suggestion);
+      const updatedLive = await transaction.liveSession.update({
+        where: { id: liveId },
+        data: { nextEventSequence: { increment: 1 } },
+        select: { nextEventSequence: true },
+      });
+      const event = await transaction.realtimeEvent.create({
+        data: {
+          liveId,
+          sequence: updatedLive.nextEventSequence - 1,
+          type: 'ai.suggestion.created',
+          payloadJson: { suggestion: suggestionDto },
+        },
+      });
+
+      await transaction.auditLog.create({
+        data: {
+          liveId,
+          actorId,
+          action: 'AI_SUGGESTION_CREATED',
+          entityType: 'AI_SUGGESTION',
+          entityId: suggestion.id,
+          afterJson: {
+            inputHash,
+            provider: suggestionDto.provider,
+            type: suggestionDto.type,
+          },
+        },
+      });
+
+      return {
+        kind: 'created',
+        suggestion: suggestionDto,
+        event: {
+          eventId: event.id,
+          liveId,
+          sequence: event.sequence,
+          type: 'ai.suggestion.created',
+          occurredAt: event.occurredAt.toISOString(),
+          payload: { suggestion: suggestionDto },
+        },
+      } as const;
+    });
+  },
+
+  async reviewAiSuggestion({
+    suggestionId,
+    actorId,
+    action,
+    editedOutput,
+    announcementContent,
+    reason,
+  }) {
+    return prisma.$transaction(async (transaction) => {
+      const suggestion = await transaction.aiSuggestion.findUnique({
+        where: { id: suggestionId },
+      });
+
+      if (!suggestion) {
+        return { kind: 'suggestion_not_found' } as const;
+      }
+
+      if (suggestion.status !== 'PENDING') {
+        return { kind: 'suggestion_not_reviewable' } as const;
+      }
+
+      const originalOutput = aiChatSummarySchema.parse(suggestion.outputJson);
+      const output = editedOutput ?? originalOutput;
+      const reviewedAt = new Date();
+      const status = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      const updatedCount = await transaction.aiSuggestion.updateMany({
+        where: { id: suggestionId, status: 'PENDING' },
+        data: {
+          outputJson: output,
+          status,
+          reviewedById: actorId,
+          reviewedAt,
+        },
+      });
+
+      if (updatedCount.count === 0) {
+        return { kind: 'suggestion_not_reviewable' } as const;
+      }
+
+      const reviewedSuggestion = await transaction.aiSuggestion.findUnique({
+        where: { id: suggestionId },
+      });
+      if (!reviewedSuggestion) {
+        throw new Error('AI suggestion disappeared after review.');
+      }
+
+      const reviewedSuggestionDto = toAiSuggestionDto(reviewedSuggestion);
+      const hasEditedOutput = editedOutput !== undefined;
+
+      if (hasEditedOutput) {
+        await transaction.auditLog.create({
+          data: {
+            liveId: suggestion.liveId,
+            actorId,
+            action: 'AI_SUGGESTION_EDITED',
+            entityType: 'AI_SUGGESTION',
+            entityId: suggestionId,
+            beforeJson: originalOutput,
+            afterJson: output,
+          },
+        });
+      }
+
+      if (action === 'REJECT') {
+        await transaction.auditLog.create({
+          data: {
+            liveId: suggestion.liveId,
+            actorId,
+            action: 'AI_SUGGESTION_REJECTED',
+            entityType: 'AI_SUGGESTION',
+            entityId: suggestionId,
+            beforeJson: { status: suggestion.status },
+            afterJson: { status: reviewedSuggestionDto.status },
+            reason: reason ?? null,
+          },
+        });
+
+        return { kind: 'rejected', suggestion: reviewedSuggestionDto } as const;
+      }
+
+      if (!announcementContent) {
+        throw new Error('Approved AI suggestions require announcement content.');
+      }
+
+      const announcement = await transaction.announcement.create({
+        data: {
+          liveId: suggestion.liveId,
+          content: announcementContent,
+          createdById: actorId,
+          sourceSuggestionId: suggestionId,
+        },
+      });
+      const announcementDto = toAnnouncementDto(announcement);
+      const updatedLive = await transaction.liveSession.update({
+        where: { id: suggestion.liveId },
+        data: { nextEventSequence: { increment: 1 } },
+        select: { nextEventSequence: true },
+      });
+      const event = await transaction.realtimeEvent.create({
+        data: {
+          liveId: suggestion.liveId,
+          sequence: updatedLive.nextEventSequence - 1,
+          type: 'announcement.published',
+          payloadJson: { announcement: announcementDto },
+        },
+      });
+
+      await transaction.auditLog.create({
+        data: {
+          liveId: suggestion.liveId,
+          actorId,
+          action: 'AI_SUGGESTION_APPROVED',
+          entityType: 'AI_SUGGESTION',
+          entityId: suggestionId,
+          beforeJson: { status: suggestion.status },
+          afterJson: {
+            announcementId: announcement.id,
+            announcementContent,
+            status: reviewedSuggestionDto.status,
+          },
+        },
+      });
+
+      await transaction.auditLog.create({
+        data: {
+          liveId: suggestion.liveId,
+          actorId,
+          action: 'ANNOUNCEMENT_PUBLISHED',
+          entityType: 'ANNOUNCEMENT',
+          entityId: announcement.id,
+          afterJson: {
+            sourceSuggestionId: suggestionId,
+            content: announcementContent,
+          },
+        },
+      });
+
+      return {
+        kind: 'approved',
+        suggestion: reviewedSuggestionDto,
+        event: {
+          eventId: event.id,
+          liveId: suggestion.liveId,
+          sequence: event.sequence,
+          type: 'announcement.published',
+          occurredAt: event.occurredAt.toISOString(),
+          payload: { announcement: announcementDto },
         },
       } as const;
     });

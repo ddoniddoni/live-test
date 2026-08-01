@@ -1,17 +1,21 @@
 import type {
+  AnnouncementPublishedEvent,
   ChatMessageHiddenEvent,
   ChatUserTimedOutEvent,
   CouponPublishedEvent,
   InventoryUpdatedEvent,
+  LiveStatusChangedEvent,
   LiveSnapshot,
 } from '@liveflow/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
   chatAccessQueryKey,
+  mergeAnnouncementPublishedEvent,
   mergeChatMessageHiddenEvent,
   mergeCouponPublishedEvent,
   mergeInventoryUpdatedEvent,
+  mergeLiveStatusChangedEvent,
   prependChatMessagePage,
 } from './live-api.js';
 
@@ -31,6 +35,7 @@ const snapshot: LiveSnapshot = {
     variants: [{ id: 'soft-knit-m', name: 'M', stock: 12 }],
   },
   activeCoupon: null,
+  latestAnnouncement: null,
   products: [
     {
       id: 'soft-knit',
@@ -159,6 +164,59 @@ describe('mergeCouponPublishedEvent', () => {
     expect(merged?.activeCoupon).toEqual(event.payload.coupon);
     expect(merged?.lastEventSequence).toBe(5);
     expect(mergeCouponPublishedEvent(snapshot, { ...event, sequence: 4 })).toBe(snapshot);
+  });
+});
+
+describe('mergeLiveStatusChangedEvent', () => {
+  it('replaces the persisted live state once and advances the public event sequence', () => {
+    const event: LiveStatusChangedEvent = {
+      eventId: 'live-status-event-5',
+      liveId: 'demo',
+      sequence: 5,
+      type: 'live.status.changed',
+      occurredAt: '2026-08-02T00:00:00.000Z',
+      payload: {
+        live: {
+          ...snapshot.live,
+          status: 'ENDED',
+          endedAt: '2026-08-02T00:00:00.000Z',
+        },
+      },
+    };
+
+    const merged = mergeLiveStatusChangedEvent(snapshot, event);
+
+    expect(merged?.live).toEqual(event.payload.live);
+    expect(merged?.lastEventSequence).toBe(5);
+    expect(mergeLiveStatusChangedEvent(snapshot, { ...event, sequence: 4 })).toBe(snapshot);
+  });
+});
+
+describe('mergeAnnouncementPublishedEvent', () => {
+  it('adds an approved announcement once and advances the public event sequence', () => {
+    const event: AnnouncementPublishedEvent = {
+      eventId: 'announcement-event-5',
+      liveId: 'demo',
+      sequence: 5,
+      type: 'announcement.published',
+      occurredAt: '2026-08-01T00:00:00.000Z',
+      payload: {
+        announcement: {
+          id: 'announcement-1',
+          liveId: 'demo',
+          content: '배송 일정은 운영자가 확인한 뒤 안내드리겠습니다.',
+          createdBy: 'demo-admin',
+          sourceSuggestionId: 'suggestion-1',
+          createdAt: '2026-08-01T00:00:00.000Z',
+        },
+      },
+    };
+
+    const merged = mergeAnnouncementPublishedEvent(snapshot, event);
+
+    expect(merged?.latestAnnouncement).toEqual(event.payload.announcement);
+    expect(merged?.lastEventSequence).toBe(5);
+    expect(mergeAnnouncementPublishedEvent(snapshot, { ...event, sequence: 4 })).toBe(snapshot);
   });
 });
 

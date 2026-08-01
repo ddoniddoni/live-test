@@ -6,22 +6,28 @@ import {
   realtimeEventSchema,
   type ChatAccessStatus,
   type ChatMessagePage,
+  type InventoryLowEvent,
   type LiveSnapshot,
 } from '@liveflow/contracts';
 import { io } from 'socket.io-client';
 
 import {
+  aiSuggestionsQueryKey,
   chatAccessQueryKey,
   fetchChatMessages,
   getSocketUrl,
+  inventoryLowAlertsQueryKey,
   liveSnapshotQueryKey,
+  mergeAnnouncementPublishedEvent,
   mergeChatMessage,
   mergeChatMessageHiddenEvent,
   mergeChatMessagePage,
   mergeCouponPublishedEvent,
   mergeCouponRedeemedEvent,
   mergeInventoryUpdatedEvent,
+  mergeLiveStatusChangedEvent,
   mergeProductFeaturedEvent,
+  recentOrdersQueryKey,
 } from './live-api';
 
 export type ConnectionState = 'CONNECTING' | 'CONNECTED' | 'RECOVERING' | 'DISCONNECTED' | 'FAILED';
@@ -109,6 +115,13 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
 
       const liveEvent = event.data;
 
+      if (liveEvent.type === 'live.status.changed') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeLiveStatusChangedEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
       if (liveEvent.type === 'product.featured') {
         queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
           mergeProductFeaturedEvent(snapshot, liveEvent),
@@ -130,6 +143,23 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
         return;
       }
 
+      if (liveEvent.type === 'announcement.published') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          mergeAnnouncementPublishedEvent(snapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'ai.suggestion.created') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
+            ? snapshot
+            : { ...snapshot, lastEventSequence: liveEvent.sequence },
+        );
+        void queryClient.invalidateQueries({ queryKey: aiSuggestionsQueryKey(liveId) });
+        return;
+      }
+
       if (liveEvent.type === 'inventory.updated') {
         queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
           mergeInventoryUpdatedEvent(snapshot, liveEvent),
@@ -142,6 +172,32 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
           !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
             ? snapshot
             : { ...snapshot, lastEventSequence: liveEvent.sequence },
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'order.created') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
+            ? snapshot
+            : { ...snapshot, lastEventSequence: liveEvent.sequence },
+        );
+        void queryClient.invalidateQueries({ queryKey: recentOrdersQueryKey(liveId) });
+        return;
+      }
+
+      if (liveEvent.type === 'inventory.low') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
+          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
+            ? snapshot
+            : { ...snapshot, lastEventSequence: liveEvent.sequence },
+        );
+        queryClient.setQueryData<InventoryLowEvent[]>(
+          inventoryLowAlertsQueryKey(liveId),
+          (alerts = []) =>
+            alerts.some((alert) => alert.eventId === liveEvent.eventId)
+              ? alerts
+              : [liveEvent, ...alerts].slice(0, 3),
         );
         return;
       }

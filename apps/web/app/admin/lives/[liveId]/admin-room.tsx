@@ -5,37 +5,51 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { LiveSnapshot } from '@liveflow/contracts';
+import type {
+  InventoryLowEvent,
+  LiveSnapshot,
+  LiveStatusTransitionAction,
+  PublishAnnouncementRequest,
+  ReviewAiSuggestionRequest,
+} from '@liveflow/contracts';
 
-import { ChatPanel } from '@/components/chat-panel';
+import { AnnouncementPublishForm } from '@/components/announcement-publish-form';
+import { AdminOrdersInventoryPanel } from '@/components/admin-orders-inventory-panel';
 import { CouponPublishForm } from '@/components/coupon-publish-form';
 import {
   ApiRequestError,
+  aiSuggestionsQueryKey,
+  createAiChatSummary,
   createAdminSession,
+  endLive,
   featureProduct,
+  fetchAiSuggestions,
   fetchLiveSnapshot,
+  fetchRecentOrders,
   hideChatMessage,
   liveSnapshotQueryKey,
+  inventoryLowAlertsQueryKey,
   mergeChatMessageHiddenEvent,
+  mergeAnnouncementPublishedEvent,
   mergeCouponPublishedEvent,
+  mergeLiveStatusChangedEvent,
   mergeProductFeaturedEvent,
   publishCoupon,
+  publishAnnouncement,
+  reviewAiSuggestion,
+  recentOrdersQueryKey,
+  startLive,
   timeoutChatUser,
 } from '@/lib/live-api';
 import { useLiveRealtime } from '@/lib/use-live-realtime';
 import { stitchAssets } from '@/lib/stitch-assets';
 
-import { AdminProductControl, AdminSidebar } from './admin-room-sections';
-
-const krwFormatter = new Intl.NumberFormat('ko-KR', {
-  style: 'currency',
-  currency: 'KRW',
-  maximumFractionDigits: 0,
-});
-
-function formatKrw(amount: number): string {
-  return krwFormatter.format(amount);
-}
+import {
+  AdminBroadcastControl,
+  AdminProductControl,
+  AdminRightColumn,
+  AdminSidebar,
+} from './admin-room-sections';
 
 function connectionLabel(connectionState: ReturnType<typeof useLiveRealtime>): string {
   const labels: Record<ReturnType<typeof useLiveRealtime>, string> = {
@@ -58,6 +72,22 @@ export function AdminRoom({ liveId }: { liveId: string }) {
     queryKey: liveSnapshotQueryKey(liveId),
     queryFn: () => fetchLiveSnapshot(liveId),
   });
+  const aiSuggestionsQuery = useQuery({
+    queryKey: aiSuggestionsQueryKey(liveId),
+    queryFn: () => fetchAiSuggestions(liveId, accessToken ?? ''),
+    enabled: accessToken !== null,
+  });
+  const recentOrdersQuery = useQuery({
+    queryKey: recentOrdersQueryKey(liveId),
+    queryFn: () => fetchRecentOrders(liveId, { limit: 10 }, accessToken ?? ''),
+    enabled: accessToken !== null,
+  });
+  const inventoryLowAlertsQuery = useQuery({
+    queryKey: inventoryLowAlertsQueryKey(liveId),
+    queryFn: async (): Promise<InventoryLowEvent[]> => [],
+    enabled: false,
+    initialData: [] as InventoryLowEvent[],
+  });
   const connectionState = useLiveRealtime(liveId, accessToken);
 
   const featureMutation = useMutation({
@@ -71,6 +101,20 @@ export function AdminRoom({ liveId }: { liveId: string }) {
     onSuccess: (event) => {
       queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
         mergeProductFeaturedEvent(snapshot, event),
+      );
+    },
+  });
+  const broadcastMutation = useMutation({
+    mutationFn: (action: LiveStatusTransitionAction) => {
+      if (!accessToken) {
+        throw new Error('관리자 세션이 필요합니다.');
+      }
+
+      return action === 'START' ? startLive(liveId, accessToken) : endLive(liveId, accessToken);
+    },
+    onSuccess: (event) => {
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+        mergeLiveStatusChangedEvent(snapshot, event),
       );
     },
   });
@@ -117,6 +161,46 @@ export function AdminRoom({ liveId }: { liveId: string }) {
         mergeCouponPublishedEvent(snapshot, event),
       );
     },
+  });
+  const announcementMutation = useMutation({
+    mutationFn: (input: PublishAnnouncementRequest) => {
+      if (!accessToken) {
+        throw new Error('관리자 세션이 필요합니다.');
+      }
+
+      return publishAnnouncement(liveId, input, accessToken);
+    },
+    onSuccess: (event) => {
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+        mergeAnnouncementPublishedEvent(snapshot, event),
+      );
+    },
+  });
+  const chatSummaryMutation = useMutation({
+    mutationFn: () => {
+      if (!accessToken) {
+        throw new Error('관리자 세션이 필요합니다.');
+      }
+
+      return createAiChatSummary(liveId, accessToken);
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: aiSuggestionsQueryKey(liveId),
+      }),
+  });
+  const reviewAiSuggestionMutation = useMutation({
+    mutationFn: (input: { suggestionId: string; review: ReviewAiSuggestionRequest }) => {
+      if (!accessToken) {
+        throw new Error('관리자 세션이 필요합니다.');
+      }
+
+      return reviewAiSuggestion(input.suggestionId, input.review, accessToken);
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: aiSuggestionsQueryKey(liveId),
+      }),
   });
 
   async function handleLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -216,6 +300,21 @@ export function AdminRoom({ liveId }: { liveId: string }) {
                 </div>
               </section>
 
+              <AdminBroadcastControl
+                accessToken={accessToken}
+                error={
+                  broadcastMutation.isError
+                    ? broadcastMutation.error instanceof Error
+                      ? broadcastMutation.error.message
+                      : '방송 상태를 변경하지 못했습니다. 다시 시도해 주세요.'
+                    : null
+                }
+                isPending={broadcastMutation.isPending}
+                onEnd={() => broadcastMutation.mutate('END')}
+                onStart={() => broadcastMutation.mutate('START')}
+                status={snapshot.live.status}
+              />
+
               <AdminProductControl
                 accessToken={accessToken}
                 featuredProductId={snapshot.featuredProduct?.id ?? null}
@@ -237,91 +336,96 @@ export function AdminRoom({ liveId }: { liveId: string }) {
                 isPending={couponMutation.isPending}
                 onPublish={(input) => couponMutation.mutateAsync(input)}
               />
-            </div>
 
-            <aside className="admin-right-column" aria-label="실시간 운영 도구">
-              <section className="admin-ai-card">
-                <div className="admin-ai-heading">
-                  <span aria-hidden="true">✦</span>
-                  <h2>AI 채팅 요약 및 제안</h2>
-                </div>
-                <div>
-                  <p>
-                    라이브 채팅 요약과 운영 공지 제안은 다음 개발 단계에서 실제 AI 승인 흐름으로
-                    연결됩니다.
-                  </p>
-                  <span>준비 중 · 운영자 승인 후 발행</span>
-                </div>
-              </section>
-
-              <ChatPanel
-                accessToken={accessToken}
-                currentUser={
-                  accessToken
-                    ? { id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' }
+              <AnnouncementPublishForm
+                disabled={!accessToken}
+                error={
+                  announcementMutation.isError
+                    ? announcementMutation.error instanceof Error
+                      ? announcementMutation.error.message
+                      : '공지를 발행하지 못했습니다. 다시 시도해 주세요.'
                     : null
                 }
-                liveId={liveId}
-                hasMore={snapshot.chat.hasMore}
-                messages={snapshot.chat.messages}
-                hidingMessageId={
-                  hideMessageMutation.isPending
-                    ? (hideMessageMutation.variables?.messageId ?? null)
-                    : null
-                }
-                timingOutUserId={
-                  timeoutUserMutation.isPending
-                    ? (timeoutUserMutation.variables?.userId ?? null)
-                    : null
-                }
-                moderationError={
-                  hideMessageMutation.isError
-                    ? hideMessageMutation.error instanceof Error
-                      ? hideMessageMutation.error.message
-                      : '메시지를 숨기지 못했습니다. 다시 시도해 주세요.'
-                    : timeoutUserMutation.isError
-                      ? timeoutUserMutation.error instanceof Error
-                        ? timeoutUserMutation.error.message
-                        : '사용자를 채팅 제한하지 못했습니다. 다시 시도해 주세요.'
-                      : null
-                }
-                sessionError={loginError}
-                variant="admin"
-                {...(accessToken
-                  ? {
-                      onHideMessage: (messageId: string, reason: string) =>
-                        hideMessageMutation.mutate({ messageId, reason }),
-                      onTimeoutUser: (userId: string, durationMinutes: number, reason: string) =>
-                        timeoutUserMutation.mutate({ userId, durationMinutes, reason }),
-                    }
-                  : {})}
+                isPending={announcementMutation.isPending}
+                onPublish={(input) => announcementMutation.mutateAsync(input)}
               />
 
-              <div className="admin-metrics-grid">
-                <article className="admin-metric-card coupon-metric">
-                  <span>진행중</span>
-                  <h3>라이브 쿠폰</h3>
-                  <strong>
-                    {snapshot.activeCoupon
-                      ? snapshot.activeCoupon.type === 'PERCENT'
-                        ? `${snapshot.activeCoupon.value}% 할인`
-                        : `${formatKrw(snapshot.activeCoupon.value)} 할인`
-                      : '발행된 쿠폰 없음'}
-                  </strong>
-                  <small>
-                    {snapshot.activeCoupon
-                      ? `${snapshot.activeCoupon.usedCount}장 사용됨`
-                      : '아래 쿠폰 설정에서 발행할 수 있습니다.'}
-                  </small>
-                </article>
-                <article className="admin-metric-card stock-metric">
-                  <span>재고 현황</span>
-                  <h3>{lowestStockProduct?.name ?? '등록 상품 없음'}</h3>
-                  <strong>{lowestStockProduct?.stock ?? 0}개</strong>
-                  <small>현재 가장 적은 총 재고</small>
-                </article>
-              </div>
-            </aside>
+              <AdminOrdersInventoryPanel
+                inventoryLowAlerts={inventoryLowAlertsQuery.data}
+                orders={recentOrdersQuery.data}
+                ordersError={
+                  recentOrdersQuery.isError
+                    ? recentOrdersQuery.error instanceof Error
+                      ? recentOrdersQuery.error.message
+                      : '최근 주문을 불러오지 못했습니다. 다시 시도해 주세요.'
+                    : null
+                }
+                ordersLoading={recentOrdersQuery.isPending}
+                products={snapshot.products}
+                requiresAdminSession={!accessToken}
+              />
+            </div>
+
+            <AdminRightColumn
+              accessToken={accessToken}
+              activeCoupon={snapshot.activeCoupon}
+              aiError={
+                chatSummaryMutation.isError
+                  ? chatSummaryMutation.error instanceof Error
+                    ? chatSummaryMutation.error.message
+                    : 'AI 채팅 요약을 만들지 못했습니다. 다시 시도해 주세요.'
+                  : reviewAiSuggestionMutation.isError
+                    ? reviewAiSuggestionMutation.error instanceof Error
+                      ? reviewAiSuggestionMutation.error.message
+                      : 'AI 제안을 검토하지 못했습니다. 다시 시도해 주세요.'
+                    : aiSuggestionsQuery.isError
+                      ? 'AI 제안 목록을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.'
+                      : null
+              }
+              aiSuggestions={aiSuggestionsQuery.data}
+              chat={snapshot.chat}
+              hidingMessageId={
+                hideMessageMutation.isPending
+                  ? (hideMessageMutation.variables?.messageId ?? null)
+                  : null
+              }
+              isReviewingSuggestionId={
+                reviewAiSuggestionMutation.isPending
+                  ? (reviewAiSuggestionMutation.variables?.suggestionId ?? null)
+                  : null
+              }
+              isSummarizing={chatSummaryMutation.isPending}
+              liveId={liveId}
+              liveStatus={snapshot.live.status}
+              loginError={loginError}
+              lowestStockProduct={lowestStockProduct}
+              moderationError={
+                hideMessageMutation.isError
+                  ? hideMessageMutation.error instanceof Error
+                    ? hideMessageMutation.error.message
+                    : '메시지를 숨기지 못했습니다. 다시 시도해 주세요.'
+                  : timeoutUserMutation.isError
+                    ? timeoutUserMutation.error instanceof Error
+                      ? timeoutUserMutation.error.message
+                      : '사용자를 채팅 제한하지 못했습니다. 다시 시도해 주세요.'
+                    : null
+              }
+              onCreateSummary={() => chatSummaryMutation.mutate()}
+              onHideMessage={(messageId, reason) =>
+                hideMessageMutation.mutate({ messageId, reason })
+              }
+              onReview={(suggestionId, review) =>
+                reviewAiSuggestionMutation.mutate({ review, suggestionId })
+              }
+              onTimeoutUser={(userId, durationMinutes, reason) =>
+                timeoutUserMutation.mutate({ userId, durationMinutes, reason })
+              }
+              timingOutUserId={
+                timeoutUserMutation.isPending
+                  ? (timeoutUserMutation.variables?.userId ?? null)
+                  : null
+              }
+            />
           </div>
         </div>
       </section>

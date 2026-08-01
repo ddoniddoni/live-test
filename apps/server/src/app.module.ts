@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import type { DynamicModule } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 
+import { AiService } from './ai.service.js';
 import { AuthService } from './auth.service.js';
 import { LiveController } from './live.controller.js';
 import { LiveService } from './live.service.js';
@@ -34,6 +35,7 @@ export class LiveFlowModule {
           provide: LIVE_REPOSITORY,
           useValue: configuration.liveRepository,
         },
+        AiService,
         AuthService,
         LiveService,
         LiveGateway,

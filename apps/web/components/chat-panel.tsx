@@ -1,15 +1,9 @@
 'use client';
 
-import {
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ChatMessage, LiveSnapshot, Role } from '@liveflow/contracts';
+import type { ChatMessage, LiveSnapshot, LiveStatus, Role } from '@liveflow/contracts';
 
 import {
   ApiRequestError,
@@ -32,6 +26,7 @@ type ChatPanelProps = {
     role: Role;
   } | null;
   hasMore: boolean;
+  liveStatus: LiveStatus;
   messages: ChatMessage[];
   sessionError?: string | null;
   chatTimeoutExpiresAt?: string | null;
@@ -55,6 +50,7 @@ export function ChatPanel({
   accessToken,
   currentUser,
   hasMore,
+  liveStatus,
   messages,
   sessionError,
   chatTimeoutExpiresAt,
@@ -73,6 +69,11 @@ export function ChatPanel({
   const [pendingMessages, setPendingMessages] = useState<PendingChatMessage[]>([]);
   const timeoutAt = chatTimeoutExpiresAt ? Date.parse(chatTimeoutExpiresAt) : Number.NaN;
   const isChatTimedOut = Number.isFinite(timeoutAt) && timeoutAt > now;
+  const isChatAvailable = liveStatus === 'LIVE';
+  const unavailableChatMessage =
+    liveStatus === 'READY'
+      ? '방송이 시작되면 채팅에 참여할 수 있습니다.'
+      : '방송이 종료되어 새 채팅을 보낼 수 없습니다.';
 
   useEffect(() => {
     if (!Number.isFinite(timeoutAt) || timeoutAt <= Date.now()) {
@@ -119,7 +120,7 @@ export function ChatPanel({
   const isSending = pendingMessages.some((pendingMessage) => pendingMessage.status === 'SENDING');
 
   function sendMessage(clientMessageId: string, content: string): void {
-    if (isChatTimedOut) {
+    if (isChatTimedOut || !isChatAvailable) {
       return;
     }
 
@@ -134,7 +135,14 @@ export function ChatPanel({
 
   function submitDraft(): void {
     const content = draft.trim();
-    if (!content || !accessToken || !currentUser || isSending || isChatTimedOut) {
+    if (
+      !content ||
+      !accessToken ||
+      !currentUser ||
+      isSending ||
+      isChatTimedOut ||
+      !isChatAvailable
+    ) {
       return;
     }
 
@@ -193,7 +201,7 @@ export function ChatPanel({
       <form className="chat-form" onSubmit={handleSubmit}>
         <label htmlFor={`${variant}-chat-draft`}>메시지 입력</label>
         <textarea
-          disabled={!accessToken || !currentUser || isChatTimedOut}
+          disabled={!accessToken || !currentUser || isChatTimedOut || !isChatAvailable}
           id={`${variant}-chat-draft`}
           maxLength={500}
           onChange={(event) => setDraft(event.target.value)}
@@ -205,11 +213,13 @@ export function ChatPanel({
           }}
           onKeyDown={handleKeyDown}
           placeholder={
-            isChatTimedOut
-              ? '채팅 제한이 적용되어 있습니다'
-              : accessToken
-                ? '메시지를 입력하세요'
-                : '채팅 세션을 준비하는 중입니다'
+            !isChatAvailable
+              ? unavailableChatMessage
+              : isChatTimedOut
+                ? '채팅 제한이 적용되어 있습니다'
+                : accessToken
+                  ? '메시지를 입력하세요'
+                  : '채팅 세션을 준비하는 중입니다'
           }
           rows={2}
           value={draft}
@@ -219,14 +229,23 @@ export function ChatPanel({
             {sessionError ??
               (isChatTimedOut
                 ? `채팅 제한됨 · ${timeoutTimeFormatter.format(new Date(timeoutAt))}까지`
-                : sendMutation.isError
-                  ? sendMutation.error instanceof ApiRequestError
-                    ? sendMutation.error.message
-                    : '메시지를 보내지 못했습니다. 다시 시도해 주세요.'
-                  : 'Enter로 전송 · Shift + Enter로 줄바꿈')}
+                : !isChatAvailable
+                  ? unavailableChatMessage
+                  : sendMutation.isError
+                    ? sendMutation.error instanceof ApiRequestError
+                      ? sendMutation.error.message
+                      : '메시지를 보내지 못했습니다. 다시 시도해 주세요.'
+                    : 'Enter로 전송 · Shift + Enter로 줄바꿈')}
           </p>
           <button
-            disabled={!draft.trim() || !accessToken || !currentUser || isSending || isChatTimedOut}
+            disabled={
+              !draft.trim() ||
+              !accessToken ||
+              !currentUser ||
+              isSending ||
+              isChatTimedOut ||
+              !isChatAvailable
+            }
             type="submit"
           >
             보내기

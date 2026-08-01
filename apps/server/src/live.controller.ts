@@ -6,12 +6,19 @@ import {
   HttpStatus,
   Inject,
   Param,
+  Patch,
   Post,
   Put,
   Query,
   Req,
 } from '@nestjs/common';
 import {
+  aiSuggestionListSchema,
+  aiSuggestionParamsSchema,
+  aiSuggestionSchema,
+  announcementPublishedEventSchema,
+  auditLogPageSchema,
+  auditLogsQuerySchema,
   chatAccessStatusSchema,
   chatMessagePageSchema,
   chatMessageHiddenEventSchema,
@@ -27,18 +34,30 @@ import {
   healthResponseSchema,
   hideChatMessageRequestSchema,
   liveParamsSchema,
+  liveStatusChangedEventSchema,
   liveSnapshotSchema,
   couponPublishedEventSchema,
   couponRedeemedEventSchema,
+  createAiChatSummaryRequestSchema,
+  aiProductAnswerSchema,
+  createProductQuestionRequestSchema,
   createOrderRequestSchema,
   idempotencyKeySchema,
   inventoryUpdatedEventSchema,
+  inventoryLowEventSchema,
+  adminOrderListSchema,
   orderSchema,
+  orderCreatedEventSchema,
   orderStatusChangedEventSchema,
+  ordersQuerySchema,
+  publishAnnouncementRequestSchema,
   publishCouponRequestSchema,
+  reviewAiSuggestionRequestSchema,
 } from '@liveflow/contracts';
+import type { LiveStatusTransitionAction } from '@liveflow/contracts';
 import type { FastifyRequest } from 'fastify';
 
+import { AiProviderUnavailableError } from './ai.service.js';
 import { ApiException } from './api-exception.filter.js';
 import { AuthService } from './auth.service.js';
 import { LiveGateway } from './live.gateway.js';
@@ -204,6 +223,198 @@ export class LiveController {
     return chatMessageSchema.parse(result.message);
   }
 
+  @Post('api/v1/lives/:liveId/ai/product-questions')
+  @HttpCode(HttpStatus.OK)
+  async answerProductQuestion(
+    @Param('liveId') liveId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const session = this.authService.requireSession(
+      request.headers.authorization,
+      '상품 질문을 위해 시청자 세션이 필요합니다.',
+    );
+
+    if (session.role !== 'VIEWER') {
+      throw new ApiException(403, 'FORBIDDEN', '시청자 세션으로만 상품 질문을 보낼 수 있습니다.');
+    }
+
+    this.consumeRateLimit(request, 'product-question', 10, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedBody = createProductQuestionRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '상품 질문을 확인해 주세요.');
+    }
+
+    try {
+      const result = await this.liveService.answerProductQuestion(
+        parsedParams.data.liveId,
+        parsedBody.data.question,
+      );
+
+      if (result.kind === 'live_not_found') {
+        throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+      }
+
+      if (result.kind === 'featured_product_not_found') {
+        throw new ApiException(
+          409,
+          'FEATURED_PRODUCT_REQUIRED',
+          '현재 소개 중인 상품이 없어 질문에 답할 수 없습니다.',
+        );
+      }
+
+      return aiProductAnswerSchema.parse(result.answer);
+    } catch (error: unknown) {
+      if (error instanceof AiProviderUnavailableError) {
+        throw new ApiException(
+          503,
+          'AI_PROVIDER_UNAVAILABLE',
+          'AI 답변을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  @Get('api/v1/admin/lives/:liveId/ai/suggestions')
+  async getAiSuggestions(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.getAiSuggestions(parsedParams.data.liveId);
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return aiSuggestionListSchema.parse(result.suggestions);
+  }
+
+  @Get('api/v1/admin/lives/:liveId/audit-logs')
+  async getAuditLogs(
+    @Param('liveId') liveId: string,
+    @Query() query: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedQuery = auditLogsQuerySchema.safeParse(query);
+    if (!parsedQuery.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '감사 로그 조회 조건이 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.getAuditLogs(parsedParams.data.liveId, parsedQuery.data);
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return auditLogPageSchema.parse(result.page);
+  }
+
+  @Post('api/v1/admin/lives/:liveId/ai/chat-summaries')
+  @HttpCode(HttpStatus.OK)
+  async createChatSummarySuggestion(
+    @Param('liveId') liveId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'ai-chat-summary', 5, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedBody = createAiChatSummaryRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '분석할 메시지 수를 확인해 주세요.');
+    }
+
+    try {
+      const result = await this.liveService.createChatSummarySuggestion({
+        actorId: session.userId,
+        liveId: parsedParams.data.liveId,
+        maxMessages: parsedBody.data.maxMessages,
+      });
+
+      if (result.kind === 'live_not_found') {
+        throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+      }
+
+      if (result.kind === 'no_chat_messages') {
+        throw new ApiException(409, 'CHAT_MESSAGES_REQUIRED', '요약할 최근 채팅이 없습니다.');
+      }
+
+      this.liveGateway.publishToAdmins(result.event);
+      return aiSuggestionSchema.parse(result.suggestion);
+    } catch (error: unknown) {
+      if (error instanceof AiProviderUnavailableError) {
+        throw new ApiException(
+          503,
+          'AI_PROVIDER_UNAVAILABLE',
+          'AI 요약을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  @Patch('api/v1/admin/ai/suggestions/:suggestionId')
+  async reviewAiSuggestion(
+    @Param('suggestionId') suggestionId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'ai-suggestion-review', 10, 60_000);
+    const parsedParams = aiSuggestionParamsSchema.safeParse({ suggestionId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', 'AI 제안 ID가 올바르지 않습니다.');
+    }
+
+    const parsedBody = reviewAiSuggestionRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', 'AI 제안 검토 내용을 확인해 주세요.');
+    }
+
+    const result = await this.liveService.reviewAiSuggestion({
+      actorId: session.userId,
+      suggestionId: parsedParams.data.suggestionId,
+      ...parsedBody.data,
+    });
+
+    if (result.kind === 'suggestion_not_found') {
+      throw new ApiException(404, 'AI_SUGGESTION_NOT_FOUND', 'AI 제안을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'suggestion_not_reviewable') {
+      throw new ApiException(
+        409,
+        'AI_SUGGESTION_NOT_REVIEWABLE',
+        '이미 검토가 끝난 AI 제안입니다.',
+      );
+    }
+
+    if (result.kind === 'approved') {
+      this.liveGateway.publish(announcementPublishedEventSchema.parse(result.event));
+    }
+
+    return aiSuggestionSchema.parse(result.suggestion);
+  }
+
   @Post('api/v1/orders')
   @HttpCode(HttpStatus.OK)
   async createOrder(@Body() body: unknown, @Req() request: FastifyRequest) {
@@ -280,9 +491,41 @@ export class LiveController {
         orderStatusChangedEventSchema.parse(result.orderEvent),
         session.userId,
       );
+      this.liveGateway.publishToAdmins(orderCreatedEventSchema.parse(result.adminOrderEvent));
+      if (result.inventoryLowEvent) {
+        this.liveGateway.publishToAdmins(inventoryLowEventSchema.parse(result.inventoryLowEvent));
+      }
     }
 
     return orderSchema.parse(result.order);
+  }
+
+  @Get('api/v1/admin/lives/:liveId/orders')
+  async getRecentOrders(
+    @Param('liveId') liveId: string,
+    @Query() query: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedQuery = ordersQuerySchema.safeParse(query);
+    if (!parsedQuery.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '주문 조회 조건이 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.getRecentOrders(
+      parsedParams.data.liveId,
+      parsedQuery.data,
+    );
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return adminOrderListSchema.parse(result.orders);
   }
 
   @Put('api/v1/admin/lives/:liveId/messages/:messageId/hide')
@@ -414,6 +657,49 @@ export class LiveController {
     return couponPublishedEventSchema.parse(result.event);
   }
 
+  @Post('api/v1/admin/lives/:liveId/announcements')
+  async publishAnnouncement(
+    @Param('liveId') liveId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'announcement-publish', 10, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedBody = publishAnnouncementRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '공지 내용을 두 글자 이상 입력해 주세요.');
+    }
+
+    const result = await this.liveService.publishAnnouncement({
+      liveId: parsedParams.data.liveId,
+      actorId: session.userId,
+      content: parsedBody.data.content,
+    });
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    this.liveGateway.publish(result.event);
+    return announcementPublishedEventSchema.parse(result.event);
+  }
+
+  @Post('api/v1/admin/lives/:liveId/start')
+  @HttpCode(HttpStatus.OK)
+  async startLive(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    return this.changeLiveStatus(liveId, request, 'START');
+  }
+
+  @Post('api/v1/admin/lives/:liveId/end')
+  @HttpCode(HttpStatus.OK)
+  async endLive(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    return this.changeLiveStatus(liveId, request, 'END');
+  }
+
   @Put('api/v1/admin/lives/:liveId/featured-product')
   async featureProduct(
     @Param('liveId') liveId: string,
@@ -447,6 +733,42 @@ export class LiveController {
 
     this.liveGateway.publish(result.event);
     return result.event;
+  }
+
+  private async changeLiveStatus(
+    liveId: string,
+    request: FastifyRequest,
+    action: LiveStatusTransitionAction,
+  ) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'live-status-change', 10, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.changeLiveStatus({
+      liveId: parsedParams.data.liveId,
+      actorId: session.userId,
+      action,
+    });
+
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'invalid_status_transition') {
+      throw new ApiException(
+        409,
+        'LIVE_STATUS_TRANSITION_INVALID',
+        action === 'START'
+          ? '시작 전 상태의 방송만 시작할 수 있습니다.'
+          : '진행 중인 방송만 종료할 수 있습니다.',
+      );
+    }
+
+    this.liveGateway.publish(result.event);
+    return liveStatusChangedEventSchema.parse(result.event);
   }
 
   private consumeRateLimit(

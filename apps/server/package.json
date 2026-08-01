@@ -9,7 +9,7 @@
     "build": "tsc --project tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:unit": "vitest run src/app.test.ts src/order-pricing.test.ts",
+    "test:unit": "vitest run src/app.test.ts src/ai.service.test.ts src/ai-product-answer-eval.test.ts src/order-pricing.test.ts",
     "test:integration": "vitest run src/health.integration.test.ts"
   },
   "dependencies": {

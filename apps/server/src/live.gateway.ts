@@ -76,6 +76,10 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection {
     this.server.to(toPublicRoom(event.liveId)).emit('live.event', event);
   }
 
+  publishToAdmins(event: RealtimeEvent): void {
+    this.server.to(toAdminRoom(event.liveId)).emit('live.event', event);
+  }
+
   publishToUser(event: RealtimeEvent, userId: string): void {
     this.server.to(toUserRoom(userId)).emit('live.event', event);
   }

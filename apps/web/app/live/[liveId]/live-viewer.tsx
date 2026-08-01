@@ -2,12 +2,13 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Coupon, Product } from '@liveflow/contracts';
+import type { Announcement, Coupon, Product } from '@liveflow/contracts';
 
 import { ChatPanel } from '@/components/chat-panel';
 import { MockOrderForm } from '@/components/mock-order-form';
+import { ProductQuestionPanel } from '@/components/product-question-panel';
 import {
   ApiRequestError,
   chatAccessQueryKey,
@@ -109,17 +110,39 @@ function ActiveCouponPanel({ coupon }: { coupon: Coupon | null }) {
   );
 }
 
+function LatestAnnouncementBanner({ announcement }: { announcement: Announcement | null }) {
+  if (!announcement) {
+    return null;
+  }
+
+  return (
+    <section
+      className="viewer-announcement"
+      aria-live="polite"
+      aria-labelledby="announcement-heading"
+    >
+      <p className="panel-kicker">LIVE NOTICE</p>
+      <div>
+        <h2 id="announcement-heading">운영 공지</h2>
+        <p>{announcement.content}</p>
+      </div>
+    </section>
+  );
+}
+
 function MobileProductCard({
   accessToken,
   activeCoupon,
   liveId,
   liveStatus,
+  onAskProduct,
   product,
 }: {
   accessToken: string | null;
   activeCoupon: Coupon | null;
   liveId: string;
   liveStatus: 'READY' | 'LIVE' | 'ENDED';
+  onAskProduct: () => void;
   product: Product;
 }) {
   return (
@@ -143,6 +166,9 @@ function MobileProductCard({
         product={product}
         variant="compact"
       />
+      <button className="mobile-product-question-button" onClick={onAskProduct} type="button">
+        AI 질문
+      </button>
     </article>
   );
 }
@@ -150,6 +176,7 @@ function MobileProductCard({
 export function LiveViewer({ liveId }: { liveId: string }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const mobileQuestionDialogRef = useRef<HTMLDialogElement>(null);
   const snapshotQuery = useQuery({
     queryKey: liveSnapshotQueryKey(liveId),
     queryFn: () => fetchLiveSnapshot(liveId),
@@ -197,7 +224,7 @@ export function LiveViewer({ liveId }: { liveId: string }) {
     );
   }
 
-  const { activeCoupon, featuredProduct, live } = snapshotQuery.data;
+  const { activeCoupon, featuredProduct, latestAnnouncement, live } = snapshotQuery.data;
   const liveStatusLabel =
     live.status === 'LIVE' ? 'LIVE' : live.status === 'READY' ? 'COMING SOON' : 'ENDED';
 
@@ -281,6 +308,8 @@ export function LiveViewer({ liveId }: { liveId: string }) {
             </div>
           </section>
 
+          <LatestAnnouncementBanner announcement={latestAnnouncement} />
+
           <div className="viewer-commerce-grid">
             <section className="featured-section" aria-labelledby="featured-heading">
               <div className="section-heading">
@@ -325,6 +354,16 @@ export function LiveViewer({ liveId }: { liveId: string }) {
 
             <ActiveCouponPanel coupon={activeCoupon} />
           </div>
+
+          {featuredProduct ? (
+            <ProductQuestionPanel
+              accessToken={accessToken}
+              headingId="desktop-product-question-heading"
+              key={featuredProduct.id}
+              liveId={live.id}
+              product={featuredProduct}
+            />
+          ) : null}
         </div>
 
         <ChatPanel
@@ -334,6 +373,7 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           }
           chatTimeoutExpiresAt={chatAccessQuery.data?.timeoutExpiresAt ?? null}
           liveId={liveId}
+          liveStatus={live.status}
           hasMore={snapshotQuery.data.chat.hasMore}
           messages={snapshotQuery.data.chat.messages}
           mobileAccessory={
@@ -343,6 +383,11 @@ export function LiveViewer({ liveId }: { liveId: string }) {
                 activeCoupon={activeCoupon}
                 liveId={live.id}
                 liveStatus={live.status}
+                onAskProduct={() => {
+                  if (!mobileQuestionDialogRef.current?.open) {
+                    mobileQuestionDialogRef.current?.showModal();
+                  }
+                }}
                 product={featuredProduct}
               />
             ) : null
@@ -351,6 +396,32 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           variant="viewer"
         />
       </section>
+
+      {featuredProduct ? (
+        <dialog
+          aria-labelledby="mobile-product-question-heading"
+          className="mobile-product-question-sheet"
+          ref={mobileQuestionDialogRef}
+        >
+          <div className="mobile-product-question-sheet-content">
+            <button
+              aria-label="상품 질문 닫기"
+              className="mobile-product-question-close"
+              onClick={() => mobileQuestionDialogRef.current?.close()}
+              type="button"
+            >
+              닫기
+            </button>
+            <ProductQuestionPanel
+              accessToken={accessToken}
+              headingId="mobile-product-question-heading"
+              key={featuredProduct.id}
+              liveId={live.id}
+              product={featuredProduct}
+            />
+          </div>
+        </dialog>
+      ) : null}
 
       {sessionError ? (
         <p className="viewer-session-error" role="alert">

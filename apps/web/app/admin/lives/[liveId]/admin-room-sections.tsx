@@ -3,8 +3,10 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import type { FormEventHandler } from 'react';
-import type { LiveSnapshot } from '@liveflow/contracts';
+import type { AiSuggestion, LiveSnapshot, ReviewAiSuggestionRequest } from '@liveflow/contracts';
 
+import { AiSuggestionPanel } from '@/components/ai-suggestion-panel';
+import { ChatPanel } from '@/components/chat-panel';
 import { stitchAssets } from '@/lib/stitch-assets';
 
 const krwFormatter = new Intl.NumberFormat('ko-KR', {
@@ -103,6 +105,9 @@ export function AdminSidebar({
         <a href="#admin-chat-heading">
           <span aria-hidden="true">○</span> 채팅 모니터링
         </a>
+        <Link href="/admin/audit-logs">
+          <span aria-hidden="true">◷</span> 감사 로그
+        </Link>
       </nav>
     </aside>
   );
@@ -173,5 +178,162 @@ export function AdminProductControl({
         })}
       </div>
     </section>
+  );
+}
+
+type AdminBroadcastControlProps = {
+  accessToken: string | null;
+  error: string | null;
+  isPending: boolean;
+  onEnd: () => void;
+  onStart: () => void;
+  status: LiveSnapshot['live']['status'];
+};
+
+export function AdminBroadcastControl({
+  accessToken,
+  error,
+  isPending,
+  onEnd,
+  onStart,
+  status,
+}: AdminBroadcastControlProps) {
+  const isReady = status === 'READY';
+  const isLive = status === 'LIVE';
+  const statusMessage = isReady
+    ? '방송을 시작하면 시청자 화면의 채팅과 주문이 활성화됩니다.'
+    : isLive
+      ? '방송을 종료하면 신규 시청자 채팅과 주문이 즉시 제한됩니다.'
+      : '방송이 종료되었습니다. 시청자는 다시보기 정보만 확인할 수 있습니다.';
+
+  return (
+    <section className="broadcast-control" aria-labelledby="broadcast-control-heading">
+      <div>
+        <p className="panel-kicker">BROADCAST CONTROL</p>
+        <h2 id="broadcast-control-heading">방송 상태 제어</h2>
+        <p aria-live="polite" className={error ? 'form-error' : 'broadcast-control-status'}>
+          {error ?? statusMessage}
+        </p>
+      </div>
+      {isReady ? (
+        <button disabled={!accessToken || isPending} onClick={onStart} type="button">
+          {isPending ? '방송 시작 중…' : '방송 시작'}
+        </button>
+      ) : isLive ? (
+        <button
+          className="broadcast-control-end"
+          disabled={!accessToken || isPending}
+          onClick={onEnd}
+          type="button"
+        >
+          {isPending ? '방송 종료 중…' : '방송 종료'}
+        </button>
+      ) : (
+        <span className="broadcast-control-ended">종료됨</span>
+      )}
+    </section>
+  );
+}
+
+type AdminRightColumnProps = {
+  accessToken: string | null;
+  activeCoupon: LiveSnapshot['activeCoupon'];
+  aiError: string | null;
+  aiSuggestions: AiSuggestion[] | undefined;
+  chat: LiveSnapshot['chat'];
+  hidingMessageId: string | null;
+  isReviewingSuggestionId: string | null;
+  isSummarizing: boolean;
+  liveId: string;
+  liveStatus: LiveSnapshot['live']['status'];
+  loginError: string | null;
+  lowestStockProduct: { name: string; stock: number } | null;
+  moderationError: string | null;
+  onCreateSummary: () => void;
+  onHideMessage: (messageId: string, reason: string) => void;
+  onReview: (suggestionId: string, review: ReviewAiSuggestionRequest) => void;
+  onTimeoutUser: (userId: string, durationMinutes: number, reason: string) => void;
+  timingOutUserId: string | null;
+};
+
+export function AdminRightColumn({
+  accessToken,
+  activeCoupon,
+  aiError,
+  aiSuggestions,
+  chat,
+  hidingMessageId,
+  isReviewingSuggestionId,
+  isSummarizing,
+  liveId,
+  liveStatus,
+  loginError,
+  lowestStockProduct,
+  moderationError,
+  onCreateSummary,
+  onHideMessage,
+  onReview,
+  onTimeoutUser,
+  timingOutUserId,
+}: AdminRightColumnProps) {
+  return (
+    <aside className="admin-right-column" aria-label="실시간 운영 도구">
+      <AiSuggestionPanel
+        accessToken={accessToken}
+        error={aiError}
+        isReviewingSuggestionId={isReviewingSuggestionId}
+        isSummarizing={isSummarizing}
+        onCreateSummary={onCreateSummary}
+        onReview={onReview}
+        suggestions={aiSuggestions}
+      />
+
+      <ChatPanel
+        accessToken={accessToken}
+        currentUser={
+          accessToken ? { id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' } : null
+        }
+        liveId={liveId}
+        hasMore={chat.hasMore}
+        liveStatus={liveStatus}
+        messages={chat.messages}
+        hidingMessageId={hidingMessageId}
+        timingOutUserId={timingOutUserId}
+        moderationError={moderationError}
+        sessionError={loginError}
+        variant="admin"
+        {...(accessToken
+          ? {
+              onHideMessage,
+              onTimeoutUser,
+            }
+          : {})}
+      />
+
+      <div className="admin-metrics-grid">
+        <article className="admin-metric-card coupon-metric">
+          <span>진행중</span>
+          <h3>라이브 쿠폰</h3>
+          <strong>
+            {activeCoupon
+              ? activeCoupon.type === 'PERCENT'
+                ? `${activeCoupon.value}% 할인`
+                : `${formatKrw(activeCoupon.value)} 할인`
+              : '발행된 쿠폰 없음'}
+          </strong>
+          <small>
+            {activeCoupon
+              ? `${activeCoupon.usedCount}장 사용됨`
+              : '아래 쿠폰 설정에서 발행할 수 있습니다.'}
+          </small>
+        </article>
+        <article className="admin-metric-card stock-metric">
+          <span>재고 현황</span>
+          <h3>{lowestStockProduct?.name ?? '등록 상품 없음'}</h3>
+          <strong>{lowestStockProduct?.stock ?? 0}개</strong>
+          <small>현재 가장 적은 총 재고</small>
+        </article>
+      </div>
+    </aside>
   );
 }

@@ -20,6 +20,7 @@ export {
 const defaultWebOrigin = 'http://localhost:3000';
 
 export interface BuildServerOptions {
+  aiMode?: string;
   demoAdminPassword?: string;
   demoMode?: boolean;
   jwtSecret?: string;
@@ -71,6 +72,7 @@ function createConfiguration(options: BuildServerOptions): LiveFlowConfiguration
   const demoAdminPassword = options.demoAdminPassword ?? process.env.DEMO_ADMIN_PASSWORD;
 
   return {
+    aiMode: options.aiMode ?? process.env.AI_MODE ?? 'mock',
     allowedOrigins: getWebOrigins(),
     ...(demoAdminPassword ? { demoAdminPassword } : {}),
     demoMode: options.demoMode ?? process.env.DEMO_MODE !== 'false',

@@ -81,6 +81,7 @@ const socketTestSnapshot: LiveSnapshot = {
   },
   featuredProduct: null,
   activeCoupon: null,
+  latestAnnouncement: null,
   products: [],
   lastEventSequence: 2,
   chat: {
@@ -127,6 +128,9 @@ const socketTestLiveRepository: LiveRepository = {
   async createOrder() {
     return { kind: 'live_not_found' };
   },
+  async getRecentOrders() {
+    return { kind: 'live_not_found' };
+  },
   async hideMessage() {
     return { kind: 'message_not_found' };
   },
@@ -136,8 +140,26 @@ const socketTestLiveRepository: LiveRepository = {
   async publishCoupon() {
     return { kind: 'live_not_found' };
   },
+  async publishAnnouncement() {
+    return { kind: 'live_not_found' };
+  },
   async featureProduct() {
     return { kind: 'live_not_found' };
+  },
+  async changeLiveStatus() {
+    return { kind: 'live_not_found' };
+  },
+  async getAuditLogs() {
+    return { kind: 'live_not_found' };
+  },
+  async getAiSuggestions() {
+    return { kind: 'live_not_found' };
+  },
+  async createAiSuggestion() {
+    return { kind: 'live_not_found' };
+  },
+  async reviewAiSuggestion() {
+    return { kind: 'suggestion_not_found' };
   },
 };
 

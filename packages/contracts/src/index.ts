@@ -6,6 +6,9 @@ export type Role = z.infer<typeof roleSchema>;
 export const liveStatusSchema = z.enum(['READY', 'LIVE', 'ENDED']);
 export type LiveStatus = z.infer<typeof liveStatusSchema>;
 
+export const liveStatusTransitionActionSchema = z.enum(['START', 'END']);
+export type LiveStatusTransitionAction = z.infer<typeof liveStatusTransitionActionSchema>;
+
 export const apiErrorSchema = z.object({
   code: z.string(),
   message: z.string(),
@@ -90,6 +93,21 @@ export const orderSchema = z.object({
   items: z.array(orderItemSchema).min(1),
 });
 export type Order = z.infer<typeof orderSchema>;
+
+export const adminOrderSchema = orderSchema.extend({
+  customer: z.object({
+    id: z.string().min(1),
+    nickname: z.string().min(1),
+  }),
+});
+export type AdminOrder = z.infer<typeof adminOrderSchema>;
+
+export const ordersQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+export type OrdersQuery = z.infer<typeof ordersQuerySchema>;
+
+export const adminOrderListSchema = z.array(adminOrderSchema);
 
 export const liveSessionSchema = z.object({
   id: liveIdSchema,
@@ -215,10 +233,134 @@ export const chatMessagesQuerySchema = z
   });
 export type ChatMessagesQuery = z.infer<typeof chatMessagesQuerySchema>;
 
+export const aiSuggestionTypeSchema = z.enum(['CHAT_SUMMARY']);
+export type AiSuggestionType = z.infer<typeof aiSuggestionTypeSchema>;
+
+export const aiSuggestionStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED']);
+export type AiSuggestionStatus = z.infer<typeof aiSuggestionStatusSchema>;
+
+export const aiChatSummaryGroupSchema = z.object({
+  topic: z.string().min(1).max(100),
+  count: z.int().positive(),
+  exampleMessageIds: z.array(chatMessageIdSchema).min(1).max(3),
+  suggestedAnswer: z.string().min(1).max(500),
+  sourceIds: z.array(z.string().min(1)).min(1).max(10),
+  risk: z.enum(['LOW', 'MEDIUM', 'HIGH']),
+});
+export type AiChatSummaryGroup = z.infer<typeof aiChatSummaryGroupSchema>;
+
+export const aiChatSummarySchema = z.object({
+  groups: z.array(aiChatSummaryGroupSchema).max(10),
+  overallSentiment: z.enum(['POSITIVE', 'NEUTRAL', 'NEGATIVE']),
+  requiresImmediateAttention: z.boolean(),
+});
+export type AiChatSummary = z.infer<typeof aiChatSummarySchema>;
+
+export const announcementContentSchema = z
+  .string()
+  .trim()
+  .min(2, '공지 내용은 두 글자 이상 입력해 주세요.')
+  .max(500, '공지 내용은 500자 이하로 입력해 주세요.');
+
+export const publishAnnouncementRequestSchema = z.object({
+  content: announcementContentSchema,
+});
+export type PublishAnnouncementRequest = z.infer<typeof publishAnnouncementRequestSchema>;
+
+export const announcementSchema = z.object({
+  id: z.string().min(1),
+  liveId: liveIdSchema,
+  content: announcementContentSchema,
+  createdBy: z.string().min(1),
+  sourceSuggestionId: z.string().min(1).max(64).nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type Announcement = z.infer<typeof announcementSchema>;
+
+export const auditLogSchema = z.object({
+  id: z.string().min(1),
+  liveId: liveIdSchema,
+  actor: z.object({
+    id: z.string().min(1),
+    nickname: z.string().min(1),
+  }),
+  action: z.string().min(1).max(64),
+  entityType: z.string().min(1).max(64),
+  entityId: z.string().min(1).max(128).nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type AuditLog = z.infer<typeof auditLogSchema>;
+
+export const auditLogsQuerySchema = z.object({
+  cursor: z.string().min(1).max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type AuditLogsQuery = z.infer<typeof auditLogsQuerySchema>;
+
+export const auditLogPageSchema = z.object({
+  logs: z.array(auditLogSchema),
+  nextCursor: z.string().min(1).max(64).nullable(),
+});
+export type AuditLogPage = z.infer<typeof auditLogPageSchema>;
+
+export const aiSuggestionSchema = z.object({
+  id: z.string().min(1),
+  liveId: liveIdSchema,
+  type: aiSuggestionTypeSchema,
+  provider: z.string().min(1).max(64),
+  modelOrMockVersion: z.string().min(1).max(128),
+  inputHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  output: aiChatSummarySchema,
+  status: aiSuggestionStatusSchema,
+  reviewedBy: z.string().min(1).nullable(),
+  reviewedAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type AiSuggestion = z.infer<typeof aiSuggestionSchema>;
+
+export const aiSuggestionListSchema = z.array(aiSuggestionSchema);
+
+export const createAiChatSummaryRequestSchema = z.object({
+  maxMessages: z.coerce.number().int().min(1).max(100).default(100),
+});
+export type CreateAiChatSummaryRequest = z.infer<typeof createAiChatSummaryRequestSchema>;
+
+export const aiSuggestionIdSchema = z.string().min(1).max(64);
+export const aiSuggestionParamsSchema = z.object({
+  suggestionId: aiSuggestionIdSchema,
+});
+
+export const reviewAiSuggestionRequestSchema = z
+  .object({
+    action: z.enum(['APPROVE', 'REJECT']),
+    editedOutput: aiChatSummarySchema.optional(),
+    announcementContent: announcementContentSchema.optional(),
+    reason: z.string().trim().min(2).max(300).optional(),
+  })
+  .superRefine((request, context) => {
+    if (request.action === 'APPROVE' && !request.announcementContent) {
+      context.addIssue({
+        code: 'custom',
+        path: ['announcementContent'],
+        message: '승인하려면 시청자에게 보낼 공지 내용을 입력해 주세요.',
+      });
+    }
+
+    if (request.action === 'REJECT' && !request.reason) {
+      context.addIssue({
+        code: 'custom',
+        path: ['reason'],
+        message: '거절 사유를 입력해 주세요.',
+      });
+    }
+  });
+export type ReviewAiSuggestionRequest = z.infer<typeof reviewAiSuggestionRequestSchema>;
+
 export const liveSnapshotSchema = z.object({
   live: liveSessionSchema,
   featuredProduct: productSchema.nullable(),
   activeCoupon: couponSchema.nullable(),
+  latestAnnouncement: announcementSchema.nullable(),
   products: z.array(productSchema),
   lastEventSequence: z.int().nonnegative(),
   chat: chatMessagePageSchema,
@@ -266,6 +408,26 @@ export const createOrderRequestSchema = z.object({
 });
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 
+export const productQuestionSchema = z
+  .string()
+  .trim()
+  .min(2, '상품 질문은 두 글자 이상 입력해 주세요.')
+  .max(500, '상품 질문은 500자 이하로 입력해 주세요.');
+
+export const createProductQuestionRequestSchema = z.object({
+  question: productQuestionSchema,
+});
+export type CreateProductQuestionRequest = z.infer<typeof createProductQuestionRequestSchema>;
+
+export const aiProductAnswerSchema = z.object({
+  answer: z.string().min(1).max(2_000),
+  sourceIds: z.array(z.string().min(1)).min(1),
+  confidence: z.number().min(0).max(1),
+  needsHumanReview: z.boolean(),
+  reason: z.string().min(1).max(500),
+});
+export type AiProductAnswer = z.infer<typeof aiProductAnswerSchema>;
+
 export const liveJoinRequestSchema = z.object({
   liveId: liveIdSchema,
   lastEventSequence: z.int().nonnegative(),
@@ -283,6 +445,18 @@ export const productFeaturedEventSchema = z.object({
   }),
 });
 export type ProductFeaturedEvent = z.infer<typeof productFeaturedEventSchema>;
+
+export const liveStatusChangedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('live.status.changed'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    live: liveSessionSchema,
+  }),
+});
+export type LiveStatusChangedEvent = z.infer<typeof liveStatusChangedEventSchema>;
 
 export const couponPublishedEventSchema = z.object({
   eventId: z.string().min(1),
@@ -307,6 +481,30 @@ export const couponRedeemedEventSchema = z.object({
   }),
 });
 export type CouponRedeemedEvent = z.infer<typeof couponRedeemedEventSchema>;
+
+export const announcementPublishedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('announcement.published'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    announcement: announcementSchema,
+  }),
+});
+export type AnnouncementPublishedEvent = z.infer<typeof announcementPublishedEventSchema>;
+
+export const aiSuggestionCreatedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('ai.suggestion.created'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    suggestion: aiSuggestionSchema,
+  }),
+});
+export type AiSuggestionCreatedEvent = z.infer<typeof aiSuggestionCreatedEventSchema>;
 
 export const inventoryUpdatedEventSchema = z.object({
   eventId: z.string().min(1),
@@ -333,6 +531,37 @@ export const orderStatusChangedEventSchema = z.object({
   }),
 });
 export type OrderStatusChangedEvent = z.infer<typeof orderStatusChangedEventSchema>;
+
+export const orderCreatedEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('order.created'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    order: adminOrderSchema,
+  }),
+});
+export type OrderCreatedEvent = z.infer<typeof orderCreatedEventSchema>;
+
+export const LOW_STOCK_THRESHOLD = 5;
+
+export const inventoryLowEventSchema = z.object({
+  eventId: z.string().min(1),
+  liveId: liveIdSchema,
+  sequence: z.int().positive(),
+  type: z.literal('inventory.low'),
+  occurredAt: z.iso.datetime(),
+  payload: z.object({
+    productId: z.string().min(1),
+    productName: z.string().min(1),
+    productVariantId: z.string().min(1),
+    variantName: z.string().min(1),
+    stock: z.int().nonnegative(),
+    threshold: z.literal(LOW_STOCK_THRESHOLD),
+  }),
+});
+export type InventoryLowEvent = z.infer<typeof inventoryLowEventSchema>;
 
 export const chatMessageCreatedEventSchema = z.object({
   eventId: z.string().min(1),
@@ -372,11 +601,16 @@ export const chatUserTimedOutEventSchema = z.object({
 export type ChatUserTimedOutEvent = z.infer<typeof chatUserTimedOutEventSchema>;
 
 export const realtimeEventSchema = z.discriminatedUnion('type', [
+  liveStatusChangedEventSchema,
   productFeaturedEventSchema,
   couponPublishedEventSchema,
   couponRedeemedEventSchema,
+  announcementPublishedEventSchema,
+  aiSuggestionCreatedEventSchema,
   inventoryUpdatedEventSchema,
   orderStatusChangedEventSchema,
+  orderCreatedEventSchema,
+  inventoryLowEventSchema,
   chatMessageCreatedEventSchema,
   chatMessageHiddenEventSchema,
   chatUserTimedOutEventSchema,

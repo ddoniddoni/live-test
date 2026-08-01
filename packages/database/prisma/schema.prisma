@@ -49,6 +49,16 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum AiSuggestionType {
+  CHAT_SUMMARY
+}
+
+enum AiSuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id                 String        @id @default(cuid())
   nickname           String
@@ -59,6 +69,8 @@ model User {
   chatTimeouts       ChatTimeout[] @relation("ChatTimeoutTarget")
   issuedChatTimeouts ChatTimeout[] @relation("ChatTimeoutActor")
   orders            Order[]
+  reviewedAiSuggestions AiSuggestion[] @relation("AiSuggestionReviewer")
+  announcements     Announcement[] @relation("AnnouncementCreator")
 
   @@map("users")
 }
@@ -78,6 +90,8 @@ model LiveSession {
   chatTimeouts      ChatTimeout[]
   coupons           Coupon[]
   orders            Order[]
+  aiSuggestions     AiSuggestion[]
+  announcements     Announcement[]
 
   @@map("live_sessions")
 }
@@ -219,6 +233,43 @@ model OrderItem {
   @@index([orderId])
   @@index([productVariantId])
   @@map("order_items")
+}
+
+model AiSuggestion {
+  id                 String             @id @default(cuid())
+  liveId             String             @map("live_id")
+  live               LiveSession        @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  type               AiSuggestionType
+  provider           String             @db.VarChar(64)
+  modelOrMockVersion String             @map("model_or_mock_version") @db.VarChar(128)
+  inputHash          String             @map("input_hash") @db.VarChar(64)
+  outputJson         Json               @map("output_json")
+  status             AiSuggestionStatus @default(PENDING)
+  reviewedById       String?            @map("reviewed_by")
+  reviewedBy         User?              @relation("AiSuggestionReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  reviewedAt         DateTime?          @map("reviewed_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  announcement       Announcement?
+
+  @@index([liveId, createdAt])
+  @@index([reviewedById])
+  @@map("ai_suggestions")
+}
+
+model Announcement {
+  id                 String        @id @default(cuid())
+  liveId             String        @map("live_id")
+  live               LiveSession   @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  content            String        @db.VarChar(500)
+  createdById        String        @map("created_by")
+  createdBy          User          @relation("AnnouncementCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  sourceSuggestionId String?       @unique @map("source_suggestion_id")
+  sourceSuggestion   AiSuggestion? @relation(fields: [sourceSuggestionId], references: [id], onDelete: SetNull)
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  @@index([liveId, createdAt])
+  @@index([createdById])
+  @@map("announcements")
 }
 
 model AuditLog {

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  aiChatSummarySchema,
+  aiProductAnswerSchema,
+  adminOrderListSchema,
+  announcementPublishedEventSchema,
+  auditLogPageSchema,
+  auditLogsQuerySchema,
   chatAccessStatusSchema,
   chatMessageHiddenEventSchema,
   chatMessagesQuerySchema,
@@ -8,17 +14,26 @@ import {
   chatUserTimedOutEventSchema,
   couponPublishedEventSchema,
   couponRedeemedEventSchema,
+  createAiChatSummaryRequestSchema,
   createChatMessageRequestSchema,
+  createProductQuestionRequestSchema,
   createOrderRequestSchema,
   healthResponseSchema,
   hideChatMessageRequestSchema,
   liveSnapshotSchema,
   productFeaturedEventSchema,
   inventoryUpdatedEventSchema,
+  inventoryLowEventSchema,
+  liveStatusChangedEventSchema,
   orderSchema,
+  orderCreatedEventSchema,
   orderStatusChangedEventSchema,
+  ordersQuerySchema,
+  publishAnnouncementRequestSchema,
   publishCouponRequestSchema,
+  reviewAiSuggestionRequestSchema,
   roleSchema,
+  liveStatusTransitionActionSchema,
 } from './index.js';
 
 describe('shared contracts', () => {
@@ -57,12 +72,36 @@ describe('shared contracts', () => {
           variants: [{ id: 'soft-knit-m', name: 'M', stock: 12 }],
         },
         activeCoupon: null,
+        latestAnnouncement: null,
         products: [],
         lastEventSequence: 4,
         chat: {
           messages: [],
           lastMessageSequence: 0,
           hasMore: false,
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates one-way live status transitions and their public realtime event', () => {
+    expect(liveStatusTransitionActionSchema.safeParse('START').success).toBe(true);
+    expect(liveStatusTransitionActionSchema.safeParse('RESTART').success).toBe(false);
+    expect(
+      liveStatusChangedEventSchema.safeParse({
+        eventId: 'live-status-event-1',
+        liveId: 'demo',
+        sequence: 5,
+        type: 'live.status.changed',
+        occurredAt: '2026-08-02T00:00:00.000Z',
+        payload: {
+          live: {
+            id: 'demo',
+            title: 'LiveFlow 데모 방송',
+            status: 'LIVE',
+            startedAt: '2026-08-02T00:00:00.000Z',
+            endedAt: null,
+          },
         },
       }).success,
     ).toBe(true);
@@ -84,6 +123,112 @@ describe('shared contracts', () => {
     expect(
       chatMessagesQuerySchema.safeParse({ beforeSequence: '10', afterSequence: '2' }).success,
     ).toBe(false);
+  });
+
+  it('requires grounded, structured answers for product questions', () => {
+    expect(
+      createProductQuestionRequestSchema.safeParse({ question: '여름에 입기 괜찮나요?' }).success,
+    ).toBe(true);
+    expect(createProductQuestionRequestSchema.safeParse({ question: ' ' }).success).toBe(false);
+    expect(
+      aiProductAnswerSchema.safeParse({
+        answer: '등록된 상품 설명을 기준으로 여름용 니트입니다.',
+        sourceIds: ['product.description'],
+        confidence: 0.92,
+        needsHumanReview: false,
+        reason: '등록된 상품 설명을 근거로 답변했습니다.',
+      }).success,
+    ).toBe(true);
+    expect(
+      aiProductAnswerSchema.safeParse({
+        answer: '근거 없는 답변',
+        sourceIds: [],
+        confidence: 1.2,
+        needsHumanReview: false,
+        reason: '',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('validates a bounded chat summary and blocks approval without an announcement', () => {
+    const summary = {
+      groups: [
+        {
+          topic: '배송 문의',
+          count: 2,
+          exampleMessageIds: ['message-1'],
+          suggestedAnswer: '배송 일정은 운영자가 확인한 뒤 안내드리겠습니다.',
+          sourceIds: ['chat.messages'],
+          risk: 'MEDIUM',
+        },
+      ],
+      overallSentiment: 'NEUTRAL',
+      requiresImmediateAttention: false,
+    };
+
+    expect(aiChatSummarySchema.safeParse(summary).success).toBe(true);
+    expect(createAiChatSummaryRequestSchema.safeParse({ maxMessages: 101 }).success).toBe(false);
+    expect(
+      reviewAiSuggestionRequestSchema.safeParse({ action: 'APPROVE', editedOutput: summary })
+        .success,
+    ).toBe(false);
+    expect(
+      reviewAiSuggestionRequestSchema.safeParse({ action: 'REJECT', reason: '근거가 부족합니다.' })
+        .success,
+    ).toBe(true);
+  });
+
+  it('validates a public announcement only when it carries a persisted announcement record', () => {
+    expect(
+      publishAnnouncementRequestSchema.safeParse({
+        content: '배송 일정은 오늘 오후 운영자가 다시 안내드리겠습니다.',
+      }).success,
+    ).toBe(true);
+    expect(publishAnnouncementRequestSchema.safeParse({ content: ' ' }).success).toBe(false);
+
+    expect(
+      announcementPublishedEventSchema.safeParse({
+        eventId: 'announcement-event-1',
+        liveId: 'demo',
+        sequence: 7,
+        type: 'announcement.published',
+        occurredAt: '2026-08-01T00:00:00.000Z',
+        payload: {
+          announcement: {
+            id: 'announcement-1',
+            liveId: 'demo',
+            content: '배송 일정은 운영자가 확인한 뒤 안내드리겠습니다.',
+            createdBy: 'demo-admin',
+            sourceSuggestionId: null,
+            createdAt: '2026-08-01T00:00:00.000Z',
+          },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates bounded audit-log pages without exposing change payloads', () => {
+    expect(auditLogsQuerySchema.safeParse({ limit: '30', cursor: 'audit-log-1' }).data).toEqual({
+      limit: 30,
+      cursor: 'audit-log-1',
+    });
+    expect(auditLogsQuerySchema.safeParse({ limit: 101 }).success).toBe(false);
+    expect(
+      auditLogPageSchema.safeParse({
+        logs: [
+          {
+            id: 'audit-log-1',
+            liveId: 'demo',
+            actor: { id: 'demo-admin', nickname: 'LiveFlow Admin' },
+            action: 'LIVE_STARTED',
+            entityType: 'LIVE_SESSION',
+            entityId: 'demo',
+            createdAt: '2026-08-02T00:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects malformed product featured events', () => {
@@ -139,6 +284,63 @@ describe('shared contracts', () => {
             usedCount: 0,
             status: 'PUBLISHED',
           },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates a bounded admin order list and low-stock alert event', () => {
+    const order = {
+      id: 'order-1',
+      userId: 'demo-viewer',
+      liveId: 'demo',
+      couponId: null,
+      status: 'PAID',
+      subtotalKrw: 39000,
+      discountKrw: 0,
+      totalKrw: 39000,
+      createdAt: '2026-08-02T00:00:00.000Z',
+      items: [
+        {
+          id: 'order-item-1',
+          productVariantId: 'soft-knit-m',
+          productId: 'soft-knit',
+          productName: '소프트 릴랙스 니트',
+          variantName: 'M',
+          quantity: 1,
+          unitPriceKrw: 39000,
+        },
+      ],
+      customer: { id: 'demo-viewer', nickname: 'Demo Viewer' },
+    };
+
+    expect(ordersQuerySchema.safeParse({ limit: '10' }).data).toEqual({ limit: 10 });
+    expect(ordersQuerySchema.safeParse({ limit: 51 }).success).toBe(false);
+    expect(adminOrderListSchema.safeParse([order]).success).toBe(true);
+    expect(
+      orderCreatedEventSchema.safeParse({
+        eventId: 'order-created-1',
+        liveId: 'demo',
+        sequence: 9,
+        type: 'order.created',
+        occurredAt: '2026-08-02T00:00:00.000Z',
+        payload: { order },
+      }).success,
+    ).toBe(true);
+    expect(
+      inventoryLowEventSchema.safeParse({
+        eventId: 'inventory-low-1',
+        liveId: 'demo',
+        sequence: 10,
+        type: 'inventory.low',
+        occurredAt: '2026-08-02T00:00:00.000Z',
+        payload: {
+          productId: 'soft-knit',
+          productName: '소프트 릴랙스 니트',
+          productVariantId: 'soft-knit-m',
+          variantName: 'M',
+          stock: 5,
+          threshold: 5,
         },
       }).success,
     ).toBe(true);

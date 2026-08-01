@@ -6,6 +6,7 @@ export type DemoAccessToken = {
 };
 
 export type LiveFlowConfiguration = {
+  aiMode: string;
   allowedOrigins: string[];
   demoAdminPassword?: string;
   demoMode: boolean;

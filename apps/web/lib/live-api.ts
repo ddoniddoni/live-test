@@ -1,4 +1,10 @@
 import {
+  aiSuggestionListSchema,
+  aiSuggestionSchema,
+  aiProductAnswerSchema,
+  adminOrderListSchema,
+  announcementPublishedEventSchema,
+  auditLogPageSchema,
   apiErrorSchema,
   chatAccessStatusSchema,
   chatMessageHiddenEventSchema,
@@ -7,26 +13,44 @@ import {
   chatUserTimedOutEventSchema,
   couponPublishedEventSchema,
   couponRedeemedEventSchema,
+  createAiChatSummaryRequestSchema,
+  createProductQuestionRequestSchema,
   createOrderRequestSchema,
   demoSessionResponseSchema,
   inventoryUpdatedEventSchema,
+  liveStatusChangedEventSchema,
   liveSnapshotSchema,
   orderSchema,
+  ordersQuerySchema,
   productFeaturedEventSchema,
-  type ApiErrorResponse,
-  type ChatAccessStatus,
-  type ChatMessage,
-  type ChatMessageHiddenEvent,
-  type ChatMessagePage,
-  type ChatUserTimedOutEvent,
-  type Coupon,
-  type CouponPublishedEvent,
-  type CouponRedeemedEvent,
-  type CreateOrderRequest,
-  type InventoryUpdatedEvent,
-  type LiveSnapshot,
-  type Order,
-  type ProductFeaturedEvent,
+  publishAnnouncementRequestSchema,
+  reviewAiSuggestionRequestSchema,
+} from '@liveflow/contracts';
+import type {
+  ApiErrorResponse,
+  AiSuggestion,
+  AiProductAnswer,
+  AdminOrder,
+  AnnouncementPublishedEvent,
+  AuditLogPage,
+  ChatAccessStatus,
+  ChatMessage,
+  ChatMessageHiddenEvent,
+  ChatMessagePage,
+  ChatUserTimedOutEvent,
+  Coupon,
+  CouponPublishedEvent,
+  CouponRedeemedEvent,
+  CreateOrderRequest,
+  InventoryUpdatedEvent,
+  LiveStatusChangedEvent,
+  LiveStatusTransitionAction,
+  LiveSnapshot,
+  Order,
+  OrdersQuery,
+  ProductFeaturedEvent,
+  PublishAnnouncementRequest,
+  ReviewAiSuggestionRequest,
 } from '@liveflow/contracts';
 
 const defaultApiUrl = 'http://localhost:4000';
@@ -72,6 +96,24 @@ export function chatAccessQueryKey(liveId: string): readonly ['live', string, 'c
   return ['live', liveId, 'chat-access'];
 }
 
+export function aiSuggestionsQueryKey(liveId: string): readonly ['live', string, 'ai-suggestions'] {
+  return ['live', liveId, 'ai-suggestions'];
+}
+
+export function auditLogsQueryKey(liveId: string): readonly ['live', string, 'audit-logs'] {
+  return ['live', liveId, 'audit-logs'];
+}
+
+export function recentOrdersQueryKey(liveId: string): readonly ['live', string, 'recent-orders'] {
+  return ['live', liveId, 'recent-orders'];
+}
+
+export function inventoryLowAlertsQueryKey(
+  liveId: string,
+): readonly ['live', string, 'inventory-low-alerts'] {
+  return ['live', liveId, 'inventory-low-alerts'];
+}
+
 export async function fetchLiveSnapshot(liveId: string): Promise<LiveSnapshot> {
   const body = await readResponse(await fetch(getApiUrl(`/api/v1/lives/${liveId}/snapshot`)));
   return liveSnapshotSchema.parse(body);
@@ -111,6 +153,29 @@ export async function featureProduct(
     }),
   );
   return productFeaturedEventSchema.parse(body);
+}
+
+async function changeLiveStatus(
+  liveId: string,
+  action: LiveStatusTransitionAction,
+  accessToken: string,
+): Promise<LiveStatusChangedEvent> {
+  const path = action === 'START' ? 'start' : 'end';
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/${path}`), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return liveStatusChangedEventSchema.parse(body);
+}
+
+export function startLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
+  return changeLiveStatus(liveId, 'START', accessToken);
+}
+
+export function endLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
+  return changeLiveStatus(liveId, 'END', accessToken);
 }
 
 export async function fetchChatMessages(
@@ -171,6 +236,108 @@ export async function createChatMessage(
     }),
   );
   return chatMessageSchema.parse(body);
+}
+
+export async function askProductQuestion(
+  liveId: string,
+  question: string,
+  accessToken: string,
+): Promise<AiProductAnswer> {
+  const input = createProductQuestionRequestSchema.parse({ question });
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/lives/${liveId}/ai/product-questions`), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+  return aiProductAnswerSchema.parse(body);
+}
+
+export async function fetchAiSuggestions(
+  liveId: string,
+  accessToken: string,
+): Promise<AiSuggestion[]> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/ai/suggestions`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return aiSuggestionListSchema.parse(body);
+}
+
+export async function fetchAuditLogs(
+  liveId: string,
+  input: { cursor?: string; limit?: number },
+  accessToken: string,
+): Promise<AuditLogPage> {
+  const searchParams = new URLSearchParams({ limit: String(input.limit ?? 30) });
+  if (input.cursor) {
+    searchParams.set('cursor', input.cursor);
+  }
+
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/audit-logs?${searchParams.toString()}`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return auditLogPageSchema.parse(body);
+}
+
+export async function fetchRecentOrders(
+  liveId: string,
+  query: Partial<OrdersQuery>,
+  accessToken: string,
+): Promise<AdminOrder[]> {
+  const parsedQuery = ordersQuerySchema.parse(query);
+  const searchParams = new URLSearchParams({ limit: String(parsedQuery.limit) });
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/orders?${searchParams.toString()}`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return adminOrderListSchema.parse(body);
+}
+
+export async function createAiChatSummary(
+  liveId: string,
+  accessToken: string,
+  maxMessages = 100,
+): Promise<AiSuggestion> {
+  const input = createAiChatSummaryRequestSchema.parse({ maxMessages });
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/ai/chat-summaries`), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+  return aiSuggestionSchema.parse(body);
+}
+
+export async function reviewAiSuggestion(
+  suggestionId: string,
+  input: ReviewAiSuggestionRequest,
+  accessToken: string,
+): Promise<AiSuggestion> {
+  const parsedInput = reviewAiSuggestionRequestSchema.parse(input);
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/ai/suggestions/${suggestionId}`), {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(parsedInput),
+    }),
+  );
+  return aiSuggestionSchema.parse(body);
 }
 
 export async function hideChatMessage(
@@ -238,6 +405,25 @@ export async function publishCoupon(
   return couponPublishedEventSchema.parse(body);
 }
 
+export async function publishAnnouncement(
+  liveId: string,
+  input: PublishAnnouncementRequest,
+  accessToken: string,
+): Promise<AnnouncementPublishedEvent> {
+  const parsedInput = publishAnnouncementRequestSchema.parse(input);
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/announcements`), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(parsedInput),
+    }),
+  );
+  return announcementPublishedEventSchema.parse(body);
+}
+
 export async function createMockOrder(
   input: CreateOrderRequest,
   idempotencyKey: string,
@@ -273,6 +459,21 @@ export function mergeProductFeaturedEvent(
   };
 }
 
+export function mergeLiveStatusChangedEvent(
+  snapshot: LiveSnapshot | undefined,
+  event: LiveStatusChangedEvent,
+): LiveSnapshot | undefined {
+  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    live: event.payload.live,
+    lastEventSequence: event.sequence,
+  };
+}
+
 export function mergeCouponPublishedEvent(
   snapshot: LiveSnapshot | undefined,
   event: CouponPublishedEvent,
@@ -299,6 +500,21 @@ export function mergeCouponRedeemedEvent(
   return {
     ...snapshot,
     activeCoupon: event.payload.coupon,
+    lastEventSequence: event.sequence,
+  };
+}
+
+export function mergeAnnouncementPublishedEvent(
+  snapshot: LiveSnapshot | undefined,
+  event: AnnouncementPublishedEvent,
+): LiveSnapshot | undefined {
+  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    latestAnnouncement: event.payload.announcement,
     lastEventSequence: event.sequence,
   };
 }
