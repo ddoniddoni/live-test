@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --passWithNoTests",
     "test:integration": "vitest run --passWithNoTests",
-    "test:e2e": "playwright test"
+    "test:e2e": "node scripts/run-e2e.mjs"
   },
   "dependencies": {
     "@liveflow/contracts": "0.1.0",

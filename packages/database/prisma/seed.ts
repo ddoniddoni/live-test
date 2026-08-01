@@ -1,4 +1,6 @@
-import { ChatMessageType, LiveStatus, PrismaClient, Role } from '@prisma/client';
+import { LiveStatus, PrismaClient, Role } from '@prisma/client';
+
+import { DEMO_CHAT_MESSAGE_COUNT, createDemoChatMessages } from './demo-chat-seed.js';
 
 const prisma = new PrismaClient();
 
@@ -87,41 +89,19 @@ async function main(): Promise<void> {
       chatRoom: {
         create: {
           id: 'demo-chat',
-          nextSequence: 4,
-          messages: {
-            create: [
-              {
-                id: 'demo-message-1',
-                senderId: admin.id,
-                clientMessageId: '00000000-0000-4000-8000-000000000001',
-                sequence: 1,
-                type: ChatMessageType.ADMIN,
-                content: '안녕하세요! 오늘 소개 상품에 대해 편하게 질문해 주세요.',
-              },
-              {
-                id: 'demo-message-2',
-                senderId: viewer.id,
-                clientMessageId: '00000000-0000-4000-8000-000000000002',
-                sequence: 2,
-                type: ChatMessageType.USER,
-                content: '니트는 어떤 계절에 입기 좋은가요?',
-              },
-              {
-                id: 'demo-message-3',
-                senderId: admin.id,
-                clientMessageId: '00000000-0000-4000-8000-000000000003',
-                sequence: 3,
-                type: ChatMessageType.ADMIN,
-                content: '가벼운 여름 원사라 실내 냉방이나 초가을까지 활용하기 좋습니다.',
-              },
-            ],
-          },
+          nextSequence: DEMO_CHAT_MESSAGE_COUNT + 1,
         },
       },
     },
   });
 
-  console.info(`Seeded LiveFlow demo users, including ${admin.nickname}.`);
+  await prisma.chatMessage.createMany({
+    data: createDemoChatMessages('demo-chat', admin.id, viewer.id),
+  });
+
+  console.info(
+    `Seeded LiveFlow demo users and ${DEMO_CHAT_MESSAGE_COUNT} chat messages, including ${admin.nickname}.`,
+  );
 }
 
 main()
