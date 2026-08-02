@@ -45,6 +45,7 @@ import {
   idempotencyKeySchema,
   inventoryUpdatedEventSchema,
   inventoryLowEventSchema,
+  liveSessionSchema,
   adminOrderListSchema,
   orderSchema,
   orderCreatedEventSchema,
@@ -692,6 +693,35 @@ export class LiveController {
   @HttpCode(HttpStatus.OK)
   async startLive(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
     return this.changeLiveStatus(liveId, request, 'START');
+  }
+
+  @Post('api/v1/admin/lives/:liveId/next-session')
+  @HttpCode(HttpStatus.CREATED)
+  async createNextLiveSession(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'live-session-create', 5, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.createNextLiveSession({
+      actorId: session.userId,
+      sourceLiveId: parsedParams.data.liveId,
+    });
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'source_live_not_ended') {
+      throw new ApiException(
+        409,
+        'NEXT_LIVE_SESSION_REQUIRES_ENDED_SOURCE',
+        '새 방송은 종료된 방송에서만 만들 수 있습니다.',
+      );
+    }
+
+    return liveSessionSchema.parse(result.live);
   }
 
   @Post('api/v1/admin/lives/:liveId/end')

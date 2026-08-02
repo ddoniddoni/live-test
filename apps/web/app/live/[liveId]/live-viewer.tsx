@@ -7,8 +7,10 @@ import { useQuery } from '@tanstack/react-query';
 import type { Announcement, Coupon, Product } from '@liveflow/contracts';
 
 import { ChatPanel } from '@/components/chat-panel';
+import { MockLivePlayback } from '@/components/mock-live-playback';
 import { MockOrderForm } from '@/components/mock-order-form';
 import { ProductQuestionPanel } from '@/components/product-question-panel';
+import { ScreenState } from '@/components/screen-state';
 import {
   ApiRequestError,
   chatAccessQueryKey,
@@ -149,14 +151,16 @@ function MobileProductCard({
     <article className="mobile-product-card">
       <div className="mobile-product-image">
         <Image alt="라이브 소개 상품" fill sizes="64px" src={stitchAssets.mobileProduct} />
-        <span>1</span>
       </div>
       <div className="mobile-product-copy">
         <div>
-          <span>특가</span>
+          <span>한정 특가</span>
           <strong>{product.name}</strong>
         </div>
-        <p>{formatKrw(product.priceKrw)}</p>
+        <p>
+          {formatKrw(product.priceKrw)}
+          <small>실시간 재고 반영</small>
+        </p>
       </div>
       <MockOrderForm
         accessToken={accessToken}
@@ -166,8 +170,13 @@ function MobileProductCard({
         product={product}
         variant="compact"
       />
-      <button className="mobile-product-question-button" onClick={onAskProduct} type="button">
-        AI 질문
+      <button
+        aria-label="AI에게 상품 질문하기"
+        className="mobile-product-question-button"
+        onClick={onAskProduct}
+        type="button"
+      >
+        ✦
       </button>
     </article>
   );
@@ -181,10 +190,11 @@ export function LiveViewer({ liveId }: { liveId: string }) {
     queryKey: liveSnapshotQueryKey(liveId),
     queryFn: () => fetchLiveSnapshot(liveId),
   });
+  const isLive = snapshotQuery.data?.live.status === 'LIVE';
   const chatAccessQuery = useQuery({
     queryKey: chatAccessQueryKey(liveId),
     queryFn: () => fetchChatAccess(liveId, accessToken ?? ''),
-    enabled: accessToken !== null,
+    enabled: accessToken !== null && isLive,
   });
   const connectionState = useLiveRealtime(liveId, accessToken);
 
@@ -213,18 +223,19 @@ export function LiveViewer({ liveId }: { liveId: string }) {
   }, []);
 
   if (snapshotQuery.isPending) {
-    return <main className="screen-state">방송 정보를 불러오는 중입니다…</main>;
+    return <ScreenState>방송 정보를 불러오는 중입니다…</ScreenState>;
   }
 
   if (snapshotQuery.isError || !snapshotQuery.data) {
     return (
-      <main className="screen-state" role="alert">
+      <ScreenState tone="error">
         방송 정보를 불러오지 못했습니다. API 서버가 실행 중인지 확인해 주세요.
-      </main>
+      </ScreenState>
     );
   }
 
   const { activeCoupon, featuredProduct, latestAnnouncement, live } = snapshotQuery.data;
+  const isChatLive = live.status === 'LIVE';
   const liveStatusLabel =
     live.status === 'LIVE' ? 'LIVE' : live.status === 'READY' ? 'COMING SOON' : 'ENDED';
 
@@ -233,17 +244,21 @@ export function LiveViewer({ liveId }: { liveId: string }) {
       <header className="topbar viewer-topbar">
         <div className="topbar-brand-group">
           <Link className="brand" href="/">
-            LIVEFLOW
+            StreamOps Elite
           </Link>
+          <nav className="viewer-desktop-nav" aria-label="주요 메뉴">
+            <Link href="/">Dashboard</Link>
+            <a className="is-active" href="#live-stage">
+              Analytics
+            </a>
+            <a href="#featured-heading">Schedule</a>
+          </nav>
+        </div>
+        <div className="topbar-actions">
           <span className={`topbar-live-badge is-${live.status.toLowerCase()}`}>
             <span aria-hidden="true" />
             {liveStatusLabel}
           </span>
-          <span className="viewer-message-count">
-            메시지 {snapshotQuery.data.chat.messages.length}
-          </span>
-        </div>
-        <div className="topbar-actions">
           <span className={`connection-pill connection-${connectionState.toLowerCase()}`}>
             <span aria-hidden="true" />
             {connectionLabel(connectionState)}
@@ -256,7 +271,7 @@ export function LiveViewer({ liveId }: { liveId: string }) {
 
       <section className="viewer-layout" aria-label="라이브 방송">
         <div className="viewer-main-column">
-          <section className="broadcast-stage" aria-label="라이브 영상 영역">
+          <section className="broadcast-stage" aria-label="라이브 영상 영역" id="live-stage">
             <Image
               alt="상품을 소개하는 라이브 커머스 진행자"
               className="viewer-live-image viewer-live-image-desktop"
@@ -273,34 +288,34 @@ export function LiveViewer({ liveId }: { liveId: string }) {
               src={stitchAssets.mobileLive}
             />
             <div className="stage-gradient" aria-hidden="true" />
+            <MockLivePlayback live={live} />
 
             <div className="stage-desktop-overlay">
-              <div className={`live-badge is-${live.status.toLowerCase()}`}>
-                <span aria-hidden="true" />
-                {live.status === 'LIVE' ? '특가 방송 진행중' : liveStatusLabel}
+              <div className="stage-stream-stats">
+                <span>◉ {live.status === 'LIVE' ? '2.4k' : liveStatusLabel}</span>
+                <span>⚡ 98% Health</span>
               </div>
               <div className="stage-now-showing">
-                <span>NOW SHOWING</span>
+                <span>실시간 시연 중</span>
                 <strong>{featuredProduct?.name ?? live.title}</strong>
-                <small>{featuredProduct ? '라이브 전용 혜택을 확인해 보세요' : live.title}</small>
               </div>
             </div>
 
             <div className="mobile-live-header">
-              <div>
-                <div className="mobile-host-chip">
-                  <span className="mobile-host-avatar">
-                    <Image alt="라이브 진행자" fill sizes="32px" src={stitchAssets.mobileHost} />
-                  </span>
-                  <strong>뷰티플로우</strong>
-                </div>
+              <div className="mobile-stream-stats">
                 <span className={`mobile-live-badge is-${live.status.toLowerCase()}`}>
                   <span aria-hidden="true" />
                   {liveStatusLabel}
                 </span>
+                <span className="mobile-viewer-count">◉ 12,408</span>
               </div>
               <div className="mobile-live-actions">
-                <span>{connectionLabel(connectionState)}</span>
+                <span
+                  aria-label={connectionLabel(connectionState)}
+                  title={connectionLabel(connectionState)}
+                >
+                  ↗
+                </span>
                 <Link aria-label="라이브 나가기" href="/">
                   ×
                 </Link>
@@ -354,47 +369,65 @@ export function LiveViewer({ liveId }: { liveId: string }) {
 
             <ActiveCouponPanel coupon={activeCoupon} />
           </div>
-
-          {featuredProduct ? (
-            <ProductQuestionPanel
-              accessToken={accessToken}
-              headingId="desktop-product-question-heading"
-              key={featuredProduct.id}
-              liveId={live.id}
-              product={featuredProduct}
-            />
-          ) : null}
         </div>
 
-        <ChatPanel
-          accessToken={accessToken}
-          currentUser={
-            accessToken ? { id: 'demo-viewer', nickname: 'Demo Viewer', role: 'VIEWER' } : null
-          }
-          chatTimeoutExpiresAt={chatAccessQuery.data?.timeoutExpiresAt ?? null}
-          liveId={liveId}
-          liveStatus={live.status}
-          hasMore={snapshotQuery.data.chat.hasMore}
-          messages={snapshotQuery.data.chat.messages}
-          mobileAccessory={
-            featuredProduct ? (
-              <MobileProductCard
+        <aside className="viewer-interaction-column" aria-label="라이브 상호작용">
+          {isChatLive ? (
+            <>
+              {featuredProduct ? (
+                <ProductQuestionPanel
+                  accessToken={accessToken}
+                  headingId="desktop-product-question-heading"
+                  key={featuredProduct.id}
+                  liveId={live.id}
+                  product={featuredProduct}
+                />
+              ) : null}
+
+              <ChatPanel
                 accessToken={accessToken}
-                activeCoupon={activeCoupon}
-                liveId={live.id}
+                currentUser={
+                  accessToken
+                    ? { id: 'demo-viewer', nickname: 'Demo Viewer', role: 'VIEWER' }
+                    : null
+                }
+                chatTimeoutExpiresAt={chatAccessQuery.data?.timeoutExpiresAt ?? null}
+                liveId={liveId}
                 liveStatus={live.status}
-                onAskProduct={() => {
-                  if (!mobileQuestionDialogRef.current?.open) {
-                    mobileQuestionDialogRef.current?.showModal();
-                  }
-                }}
-                product={featuredProduct}
+                hasMore={snapshotQuery.data.chat.hasMore}
+                messages={snapshotQuery.data.chat.messages}
+                mobileAccessory={
+                  featuredProduct ? (
+                    <MobileProductCard
+                      accessToken={accessToken}
+                      activeCoupon={activeCoupon}
+                      liveId={live.id}
+                      liveStatus={live.status}
+                      onAskProduct={() => {
+                        if (!mobileQuestionDialogRef.current?.open) {
+                          mobileQuestionDialogRef.current?.showModal();
+                        }
+                      }}
+                      product={featuredProduct}
+                    />
+                  ) : null
+                }
+                sessionError={sessionError}
+                variant="viewer"
               />
-            ) : null
-          }
-          sessionError={sessionError}
-          variant="viewer"
-        />
+            </>
+          ) : (
+            <section className="viewer-chat-standby" role="status">
+              <span aria-hidden="true">◌</span>
+              <h2>{live.status === 'READY' ? '라이브 시작 대기 중' : '라이브가 종료되었습니다'}</h2>
+              <p>
+                {live.status === 'READY'
+                  ? '방송이 시작되면 실시간 채팅과 AI 상품 질문이 열립니다.'
+                  : '이 방송의 실시간 채팅은 종료되었습니다.'}
+              </p>
+            </section>
+          )}
+        </aside>
       </section>
 
       {featuredProduct ? (

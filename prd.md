@@ -354,6 +354,7 @@ interface ChatMessage {
 
 - READY 상태에서 방송 시작
 - LIVE 상태에서 방송 종료
+- ENDED 방송에서 새 READY 방송을 만들 수 있다. 이전 방송의 채팅·쿠폰·공지·주문 기록은 복사하거나 삭제하지 않는다.
 - 유효하지 않은 상태 전이를 서버가 거부
 - 시작·종료 시각과 actor를 감사 로그에 기록
 - 방송 종료 후 신규 viewer 채팅과 주문을 제한
@@ -781,6 +782,7 @@ body: { role: "VIEWER" | "ADMIN", nickname?: string }
 GET  /api/v1/lives/:liveId/snapshot
 POST /api/v1/admin/lives/:liveId/start
 POST /api/v1/admin/lives/:liveId/end
+POST /api/v1/admin/lives/:liveId/next-session
 PATCH /api/v1/admin/lives/:liveId/featured-product
 ```
 
@@ -968,6 +970,7 @@ MVP는 외부 OAuth보다 테스트 가능한 demo session을 우선한다.
 
 - `FR-LIVE-01` Admin은 READY 방송을 시작할 수 있다. MUST
 - `FR-LIVE-02` Admin은 LIVE 방송을 종료할 수 있다. MUST
+- `FR-LIVE-02A` Admin은 종료된 방송을 기준으로 빈 채팅방을 가진 새 READY 방송을 만들 수 있다. 이전 기록은 보존한다. MUST
 - `FR-LIVE-03` Viewer는 방송 상태 변경을 실시간 수신한다. MUST
 - `FR-LIVE-04` Admin은 현재 소개 상품을 선택할 수 있다. MUST
 - `FR-LIVE-05` Viewer는 최신 소개 상품을 실시간·새로고침 후 모두 확인한다. MUST
@@ -1109,6 +1112,7 @@ socket_recovery_failed
 ### 22.2 필수 단위·통합
 
 - 방송 상태 전이
+- 종료된 방송에서 새 READY 방송 생성과 권한 검증
 - 쿠폰 validation과 계산
 - event dedupe와 sequence gap
 - chat message schema

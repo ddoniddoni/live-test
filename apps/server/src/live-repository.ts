@@ -170,6 +170,18 @@ export type ChangeLiveStatusResult =
       kind: 'invalid_status_transition';
     };
 
+export type CreateNextLiveSessionResult =
+  | {
+      kind: 'created';
+      live: LiveSnapshot['live'];
+    }
+  | {
+      kind: 'live_not_found';
+    }
+  | {
+      kind: 'source_live_not_ended';
+    };
+
 export type PublishCouponResult =
   | {
       kind: 'published';
@@ -393,6 +405,10 @@ export interface LiveRepository {
     actorId: string;
     action: LiveStatusTransitionAction;
   }): Promise<ChangeLiveStatusResult>;
+  createNextLiveSession(input: {
+    sourceLiveId: string;
+    actorId: string;
+  }): Promise<CreateNextLiveSessionResult>;
   getAuditLogs(liveId: string, query: AuditLogsQuery): Promise<GetAuditLogsResult>;
   getAiSuggestions(liveId: string): Promise<GetAiSuggestionsResult>;
   createAiSuggestion(input: {
@@ -1685,6 +1701,60 @@ export const prismaLiveRepository: LiveRepository = {
           payload: eventPayload,
         },
       } as const;
+    });
+  },
+
+  async createNextLiveSession({ sourceLiveId, actorId }) {
+    return prisma.$transaction(async (transaction) => {
+      const sourceLive = await transaction.liveSession.findUnique({
+        where: { id: sourceLiveId },
+        select: {
+          featuredProductId: true,
+          status: true,
+          title: true,
+        },
+      });
+
+      if (!sourceLive) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      if (sourceLive.status !== 'ENDED') {
+        return { kind: 'source_live_not_ended' } as const;
+      }
+
+      const nextLive = await transaction.liveSession.create({
+        data: {
+          chatRoom: { create: {} },
+          featuredProductId: sourceLive.featuredProductId,
+          title: sourceLive.title,
+        },
+        select: {
+          endedAt: true,
+          id: true,
+          startedAt: true,
+          status: true,
+          title: true,
+        },
+      });
+      const live = toLiveSessionDto(nextLive);
+
+      await transaction.auditLog.create({
+        data: {
+          action: 'LIVE_SESSION_CREATED',
+          actorId,
+          afterJson: {
+            featuredProductId: sourceLive.featuredProductId,
+            status: live.status,
+          },
+          beforeJson: { sourceLiveId },
+          entityId: live.id,
+          entityType: 'LIVE_SESSION',
+          liveId: live.id,
+        },
+      });
+
+      return { kind: 'created', live } as const;
     });
   },
 

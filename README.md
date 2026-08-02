@@ -105,6 +105,7 @@ E2E 시나리오는 초기 렌더링 행이 100개 미만인지 확인합니다.
    시청자 화면의 Query cache가 갱신됩니다.
 5. 재접속·새로고침 시 HTTP snapshot이 DB의 최신 소개 상품을 다시 읽습니다.
 
+방송 화면은 실제 영상 파일 없이도 `startedAt`을 기준으로 30분 루프 Mock live 재생 위치를 표시합니다.
 채팅은 최근 메시지 조회, HTTP 저장, `clientMessageId` idempotency, optimistic 상태, Socket.IO 전파,
 HTTP/Socket dedupe, `afterSequence` 복구까지 구현했습니다. 관리자는 사유를 입력해 메시지를 숨기거나
 시청자를 5·10·30·60분 동안 채팅 제한할 수 있습니다. timeout은 방송 단위로 영속화·감사되며, 대상

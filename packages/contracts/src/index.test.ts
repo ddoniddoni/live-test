@@ -16,6 +16,7 @@ import {
   couponRedeemedEventSchema,
   createAiChatSummaryRequestSchema,
   createChatMessageRequestSchema,
+  createNextLiveSessionResponseSchema,
   createProductQuestionRequestSchema,
   createOrderRequestSchema,
   healthResponseSchema,
@@ -103,6 +104,18 @@ describe('shared contracts', () => {
             endedAt: null,
           },
         },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates the new broadcast session returned to an administrator', () => {
+    expect(
+      createNextLiveSessionResponseSchema.safeParse({
+        id: 'next-demo',
+        title: 'LiveFlow 데모 방송',
+        status: 'READY',
+        startedAt: null,
+        endedAt: null,
       }).success,
     ).toBe(true);
   });

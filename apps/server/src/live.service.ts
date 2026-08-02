@@ -95,6 +95,10 @@ export class LiveService {
     return this.liveRepository.changeLiveStatus(input);
   }
 
+  createNextLiveSession(input: { sourceLiveId: string; actorId: string }) {
+    return this.liveRepository.createNextLiveSession(input);
+  }
+
   getAuditLogs(liveId: string, query: AuditLogsQuery) {
     return this.liveRepository.getAuditLogs(liveId, query);
   }

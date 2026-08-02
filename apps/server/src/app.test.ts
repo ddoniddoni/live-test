@@ -55,6 +55,14 @@ const demoSnapshot: LiveSnapshot = {
   },
 };
 
+const nextLiveSession: LiveSnapshot['live'] = {
+  id: 'next-demo',
+  title: 'LiveFlow 데모 방송',
+  status: 'READY',
+  startedAt: null,
+  endedAt: null,
+};
+
 const demoChatMessage: ChatMessage = {
   id: 'message-1',
   clientMessageId: '9e3df3e8-7374-4d7a-8b2d-152b655c7d6f',
@@ -378,6 +386,10 @@ function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepo
       kind: 'changed',
       event: action === 'START' ? liveStartedEvent : liveEndedEvent,
     })),
+    createNextLiveSession: vi.fn(async () => ({
+      kind: 'created',
+      live: nextLiveSession,
+    })),
     getAuditLogs: vi.fn(async () => ({
       kind: 'found',
       page: auditLogPage,
@@ -554,6 +566,55 @@ describe('live product routes', () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({ code: 'LIVE_STATUS_TRANSITION_INVALID' });
     expect(publishRealtimeEvent).not.toHaveBeenCalled();
+  });
+
+  it('allows an admin to create a fresh ready session without publishing it to an existing room', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const publishRealtimeEvent = vi.spyOn(app.get(LiveGateway), 'publish');
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+
+    const deniedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives/demo/next-session',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const grantedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives/demo/next-session',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(grantedResponse.statusCode).toBe(201);
+    expect(grantedResponse.json()).toEqual(nextLiveSession);
+    expect(liveRepository.createNextLiveSession).toHaveBeenCalledWith({
+      actorId: 'demo-admin',
+      sourceLiveId: 'demo',
+    });
+    expect(publishRealtimeEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects creating a next session until the source broadcast has ended', async () => {
+    const liveRepository = createLiveRepository({
+      createNextLiveSession: vi.fn(async () => ({ kind: 'source_live_not_ended' as const })),
+    });
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives/demo/next-session',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: 'NEXT_LIVE_SESSION_REQUIRES_ENDED_SOURCE',
+    });
   });
 
   it('blocks a viewer from changing the featured product', async () => {

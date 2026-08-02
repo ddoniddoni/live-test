@@ -118,6 +118,9 @@ export const liveSessionSchema = z.object({
 });
 export type LiveSession = z.infer<typeof liveSessionSchema>;
 
+export const createNextLiveSessionResponseSchema = liveSessionSchema;
+export type CreateNextLiveSessionResponse = z.infer<typeof createNextLiveSessionResponseSchema>;
+
 export const chatMessageTypeSchema = z.enum(['USER', 'ADMIN', 'SYSTEM']);
 export type ChatMessageType = z.infer<typeof chatMessageTypeSchema>;
 

@@ -2,7 +2,6 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import type { FormEventHandler } from 'react';
 import type { AiSuggestion, LiveSnapshot, ReviewAiSuggestionRequest } from '@liveflow/contracts';
 
 import { AiSuggestionPanel } from '@/components/ai-suggestion-panel';
@@ -20,74 +19,121 @@ function formatKrw(amount: number): string {
 }
 
 type AdminSidebarProps = {
-  accessToken: string | null;
+  featuredProductId: string | null;
+  isFeaturingProduct: boolean;
   liveId: string;
-  loginError: string | null;
-  onLogin: FormEventHandler<HTMLFormElement>;
-  onPasswordChange: (password: string) => void;
-  password: string;
+  liveStatus: LiveSnapshot['live']['status'];
+  onFeature: (productId: string) => void;
+  products: LiveSnapshot['products'];
 };
 
 export function AdminSidebar({
-  accessToken,
+  featuredProductId,
+  isFeaturingProduct,
   liveId,
-  loginError,
-  onLogin,
-  onPasswordChange,
-  password,
+  liveStatus,
+  onFeature,
+  products,
 }: AdminSidebarProps) {
   return (
     <aside className="admin-sidebar" aria-label="운영자 메뉴">
       <Link className="admin-brand" href="/">
         <span aria-hidden="true">▰</span>
-        LiveFlow
+        StreamOps Elite
       </Link>
 
-      <div className="admin-profile">
-        <span className="admin-profile-image">
-          <Image alt="운영 관리자" fill sizes="48px" src={stitchAssets.adminProfile} />
-        </span>
-        <div>
-          <strong>운영 관리자</strong>
-          <small>LiveFlow Admin</small>
+      <section className="admin-stream-status" aria-labelledby="admin-stream-status-heading">
+        <div className="admin-sidebar-heading">
+          <h2 id="admin-stream-status-heading">스트림 상태</h2>
+          <span className={`is-${liveStatus.toLowerCase()}`}>
+            <i aria-hidden="true" />
+            {liveStatus}
+          </span>
         </div>
-      </div>
-
-      {accessToken ? (
-        <section className="admin-session-card">
-          <span className="admin-session-dot" aria-hidden="true" />
+        <div className="admin-profile">
+          <span className="admin-profile-image">
+            <Image alt="라이브 진행자" fill sizes="48px" src={stitchAssets.adminProfile} />
+          </span>
           <div>
-            <strong>관리자 세션 연결됨</strong>
-            <small>운영 변경 권한 확인 완료</small>
+            <strong>뷰티 앤 테크 라이브</strong>
+            <small>호스트: 김지윤</small>
           </div>
-        </section>
-      ) : (
-        <section className="admin-login" aria-labelledby="login-heading">
-          <p className="panel-kicker">DEMO ADMIN</p>
-          <h2 id="login-heading">운영자 로그인</h2>
-          <form onSubmit={onLogin}>
-            <label htmlFor="admin-password">관리자 비밀번호</label>
-            <input
-              autoComplete="current-password"
-              id="admin-password"
-              onChange={(event) => onPasswordChange(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-            {loginError ? (
-              <p className="form-error" role="alert">
-                {loginError}
-              </p>
-            ) : null}
-            <button type="submit">관리자 세션 시작</button>
-          </form>
-        </section>
-      )}
+        </div>
+        <dl className="admin-stream-metrics">
+          <div>
+            <dt>비트레이트</dt>
+            <dd>6,500 kbps</dd>
+          </div>
+          <div>
+            <dt>프레임 드롭</dt>
+            <dd>0.0% (우수)</dd>
+          </div>
+          <div>
+            <dt>오디오 레벨</dt>
+            <dd className="admin-audio-level">
+              <i />
+              <i />
+              <i />
+            </dd>
+          </div>
+          <div>
+            <dt>동시 시청자</dt>
+            <dd>12,458</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="admin-session-card">
+        <span className="admin-session-dot" aria-hidden="true" />
+        <div>
+          <strong>관리자 인증됨</strong>
+          <small>운영 변경 권한이 확인되었습니다.</small>
+        </div>
+      </section>
 
       <Link className="admin-broadcast-button" href={`/live/${liveId}`}>
         시청자 화면 열기
       </Link>
+
+      <section className="admin-product-queue" aria-labelledby="admin-product-queue-heading">
+        <div className="admin-sidebar-heading">
+          <h2 id="admin-product-queue-heading">상품 대기열</h2>
+          <span>순서 변경</span>
+        </div>
+        <div className="admin-product-queue-list">
+          {products.map((product) => {
+            const isFeatured = product.id === featuredProductId;
+            const totalStock = product.variants.reduce((sum, variant) => sum + variant.stock, 0);
+
+            return (
+              <article className={isFeatured ? 'is-featured' : ''} key={product.id}>
+                <span className="admin-product-queue-image">
+                  <Image
+                    alt={`${product.name} 상품 이미지`}
+                    fill
+                    sizes="48px"
+                    src={stitchAssets.adminProduct}
+                  />
+                </span>
+                <div>
+                  <strong>{product.name}</strong>
+                  <small>
+                    재고 {totalStock}개 · {formatKrw(product.priceKrw)}
+                  </small>
+                </div>
+                <button
+                  aria-label={`${product.name} ${isFeatured ? '소개 중' : '소개하기'}`}
+                  disabled={isFeaturingProduct || isFeatured}
+                  onClick={() => onFeature(product.id)}
+                  type="button"
+                >
+                  {isFeatured ? '●' : '▶'}
+                </button>
+              </article>
+            );
+          })}
+        </div>
+      </section>
 
       <nav className="admin-nav" aria-label="컨트롤룸 바로가기">
         <a className="is-active" href="#dashboard">
@@ -114,7 +160,6 @@ export function AdminSidebar({
 }
 
 type AdminProductControlProps = {
-  accessToken: string | null;
   featuredProductId: string | null;
   isPending: boolean;
   mutationStatus: string;
@@ -123,7 +168,6 @@ type AdminProductControlProps = {
 };
 
 export function AdminProductControl({
-  accessToken,
   featuredProductId,
   isPending,
   mutationStatus,
@@ -167,7 +211,7 @@ export function AdminProductControl({
                 </small>
               </div>
               <button
-                disabled={!accessToken || isPending || isFeatured}
+                disabled={isPending || isFeatured}
                 onClick={() => onFeature(product.id)}
                 type="button"
               >
@@ -182,18 +226,20 @@ export function AdminProductControl({
 }
 
 type AdminBroadcastControlProps = {
-  accessToken: string | null;
   error: string | null;
+  isCreatingNextSession: boolean;
   isPending: boolean;
+  onCreateNextSession: () => void;
   onEnd: () => void;
   onStart: () => void;
   status: LiveSnapshot['live']['status'];
 };
 
 export function AdminBroadcastControl({
-  accessToken,
   error,
+  isCreatingNextSession,
   isPending,
+  onCreateNextSession,
   onEnd,
   onStart,
   status,
@@ -204,7 +250,7 @@ export function AdminBroadcastControl({
     ? '방송을 시작하면 시청자 화면의 채팅과 주문이 활성화됩니다.'
     : isLive
       ? '방송을 종료하면 신규 시청자 채팅과 주문이 즉시 제한됩니다.'
-      : '방송이 종료되었습니다. 시청자는 다시보기 정보만 확인할 수 있습니다.';
+      : '이전 기록은 보존됩니다. 새 방송은 빈 채팅으로 준비됩니다.';
 
   return (
     <section className="broadcast-control" aria-labelledby="broadcast-control-heading">
@@ -216,27 +262,34 @@ export function AdminBroadcastControl({
         </p>
       </div>
       {isReady ? (
-        <button disabled={!accessToken || isPending} onClick={onStart} type="button">
+        <button disabled={isPending} onClick={onStart} type="button">
           {isPending ? '방송 시작 중…' : '방송 시작'}
         </button>
       ) : isLive ? (
         <button
           className="broadcast-control-end"
-          disabled={!accessToken || isPending}
+          disabled={isPending}
           onClick={onEnd}
           type="button"
         >
           {isPending ? '방송 종료 중…' : '방송 종료'}
         </button>
       ) : (
-        <span className="broadcast-control-ended">종료됨</span>
+        <button
+          className="broadcast-control-next"
+          disabled={isCreatingNextSession}
+          onClick={onCreateNextSession}
+          type="button"
+        >
+          {isCreatingNextSession ? '새 방송 준비 중…' : '새 방송 만들기'}
+        </button>
       )}
     </section>
   );
 }
 
 type AdminRightColumnProps = {
-  accessToken: string | null;
+  accessToken: string;
   activeCoupon: LiveSnapshot['activeCoupon'];
   aiError: string | null;
   aiSuggestions: AiSuggestion[] | undefined;
@@ -246,7 +299,6 @@ type AdminRightColumnProps = {
   isSummarizing: boolean;
   liveId: string;
   liveStatus: LiveSnapshot['live']['status'];
-  loginError: string | null;
   lowestStockProduct: { name: string; stock: number } | null;
   moderationError: string | null;
   onCreateSummary: () => void;
@@ -267,7 +319,6 @@ export function AdminRightColumn({
   isSummarizing,
   liveId,
   liveStatus,
-  loginError,
   lowestStockProduct,
   moderationError,
   onCreateSummary,
@@ -290,9 +341,7 @@ export function AdminRightColumn({
 
       <ChatPanel
         accessToken={accessToken}
-        currentUser={
-          accessToken ? { id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' } : null
-        }
+        currentUser={{ id: 'demo-admin', nickname: 'LiveFlow Admin', role: 'ADMIN' }}
         liveId={liveId}
         hasMore={chat.hasMore}
         liveStatus={liveStatus}
@@ -300,14 +349,9 @@ export function AdminRightColumn({
         hidingMessageId={hidingMessageId}
         timingOutUserId={timingOutUserId}
         moderationError={moderationError}
-        sessionError={loginError}
         variant="admin"
-        {...(accessToken
-          ? {
-              onHideMessage,
-              onTimeoutUser,
-            }
-          : {})}
+        onHideMessage={onHideMessage}
+        onTimeoutUser={onTimeoutUser}
       />
 
       <div className="admin-metrics-grid">

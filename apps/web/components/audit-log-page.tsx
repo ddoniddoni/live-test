@@ -28,6 +28,7 @@ const actionLabels: Record<string, string> = {
   CHAT_USER_TIMED_OUT: '사용자 채팅 제한',
   COUPON_PUBLISHED: '쿠폰 발행',
   LIVE_ENDED: '방송 종료',
+  LIVE_SESSION_CREATED: '새 방송 생성',
   LIVE_STARTED: '방송 시작',
   ORDER_CREATED: 'Mock 주문 생성',
   PRODUCT_FEATURED: '소개 상품 변경',

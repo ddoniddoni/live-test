@@ -11,16 +11,24 @@ test('운영자 변경과 시청자 채팅·주문이 두 브라우저에 실시
     await Promise.all([viewerPage.goto('/live/demo'), adminPage.goto('/admin/lives/demo')]);
 
     await expect(viewerPage.getByText('실시간 연결됨')).toBeVisible();
-    await expect(viewerPage.locator('.chat-virtual-row').first()).toBeVisible();
-    await expect.poll(() => viewerPage.locator('.chat-virtual-row').count()).toBeLessThan(100);
+    await expect(viewerPage.getByText('라이브 시작 대기 중')).toBeVisible();
+    await expect(viewerPage.getByRole('heading', { name: '실시간 채팅' })).toHaveCount(0);
+    await expect(adminPage.getByRole('heading', { name: '운영자 컨트롤룸' })).toBeVisible();
+    await expect(adminPage.locator('.admin-shell')).toHaveCount(0);
     await adminPage.getByLabel('관리자 비밀번호').fill(readAdminPassword());
-    await adminPage.getByRole('button', { name: '관리자 세션 시작' }).click();
-    await expect(adminPage.getByText('관리자 세션 연결됨')).toBeVisible();
+    await adminPage.getByRole('button', { name: '운영자 화면 열기' }).click();
+    await expect(adminPage.locator('.admin-shell')).toBeVisible();
+    await expect(adminPage.getByText('관리자 인증됨')).toBeVisible();
     await expect(adminPage.getByText('실시간 연결됨')).toBeVisible();
 
     await adminPage.getByRole('button', { name: '방송 시작' }).click();
     await expect(adminPage.getByRole('button', { name: '방송 종료' })).toBeVisible();
-    await expect(viewerPage.getByText('특가 방송 진행중')).toBeVisible();
+    await expect(viewerPage.getByText('실시간 시연 중')).toBeVisible();
+    await expect(viewerPage.getByRole('heading', { name: '실시간 채팅' })).toBeVisible();
+    await expect(viewerPage.locator('.chat-virtual-row').first()).toBeVisible();
+    await expect.poll(() => viewerPage.locator('.chat-virtual-row').count()).toBeLessThan(100);
+    await expect(viewerPage.getByText('MOCK LIVE')).toBeVisible();
+    await expect(viewerPage.getByLabel(/Mock live 재생 위치/)).toBeVisible();
 
     const dailyBagControl = adminPage
       .locator('.admin-product')

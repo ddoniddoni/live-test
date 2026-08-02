@@ -3,7 +3,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
-import type { FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   InventoryLowEvent,
@@ -16,11 +15,11 @@ import type {
 import { AnnouncementPublishForm } from '@/components/announcement-publish-form';
 import { AdminOrdersInventoryPanel } from '@/components/admin-orders-inventory-panel';
 import { CouponPublishForm } from '@/components/coupon-publish-form';
+import { ScreenState } from '@/components/screen-state';
 import {
-  ApiRequestError,
   aiSuggestionsQueryKey,
   createAiChatSummary,
-  createAdminSession,
+  createNextLiveSession,
   endLive,
   featureProduct,
   fetchAiSuggestions,
@@ -63,84 +62,69 @@ function connectionLabel(connectionState: ReturnType<typeof useLiveRealtime>): s
   return labels[connectionState];
 }
 
-export function AdminRoom({ liveId }: { liveId: string }) {
+export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken: string }) {
   const queryClient = useQueryClient();
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState<string | null>(null);
+  const [activeLiveId, setActiveLiveId] = useState(liveId);
   const snapshotQuery = useQuery({
-    queryKey: liveSnapshotQueryKey(liveId),
-    queryFn: () => fetchLiveSnapshot(liveId),
+    queryKey: liveSnapshotQueryKey(activeLiveId),
+    queryFn: () => fetchLiveSnapshot(activeLiveId),
   });
   const aiSuggestionsQuery = useQuery({
-    queryKey: aiSuggestionsQueryKey(liveId),
-    queryFn: () => fetchAiSuggestions(liveId, accessToken ?? ''),
-    enabled: accessToken !== null,
+    queryKey: aiSuggestionsQueryKey(activeLiveId),
+    queryFn: () => fetchAiSuggestions(activeLiveId, accessToken),
   });
   const recentOrdersQuery = useQuery({
-    queryKey: recentOrdersQueryKey(liveId),
-    queryFn: () => fetchRecentOrders(liveId, { limit: 10 }, accessToken ?? ''),
-    enabled: accessToken !== null,
+    queryKey: recentOrdersQueryKey(activeLiveId),
+    queryFn: () => fetchRecentOrders(activeLiveId, { limit: 10 }, accessToken),
   });
   const inventoryLowAlertsQuery = useQuery({
-    queryKey: inventoryLowAlertsQueryKey(liveId),
+    queryKey: inventoryLowAlertsQueryKey(activeLiveId),
     queryFn: async (): Promise<InventoryLowEvent[]> => [],
     enabled: false,
     initialData: [] as InventoryLowEvent[],
   });
-  const connectionState = useLiveRealtime(liveId, accessToken);
+  const connectionState = useLiveRealtime(activeLiveId, accessToken);
 
   const featureMutation = useMutation({
-    mutationFn: (productId: string | null) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return featureProduct(liveId, productId, accessToken);
-    },
+    mutationFn: (productId: string | null) => featureProduct(activeLiveId, productId, accessToken),
     onSuccess: (event) => {
-      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeProductFeaturedEvent(snapshot, event),
       );
     },
   });
   const broadcastMutation = useMutation({
-    mutationFn: (action: LiveStatusTransitionAction) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return action === 'START' ? startLive(liveId, accessToken) : endLive(liveId, accessToken);
-    },
+    mutationFn: (action: LiveStatusTransitionAction) =>
+      action === 'START'
+        ? startLive(activeLiveId, accessToken)
+        : endLive(activeLiveId, accessToken),
     onSuccess: (event) => {
-      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeLiveStatusChangedEvent(snapshot, event),
       );
     },
   });
-  const hideMessageMutation = useMutation({
-    mutationFn: (input: { messageId: string; reason: string }) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return hideChatMessage(liveId, input.messageId, input.reason, accessToken);
+  const nextSessionMutation = useMutation({
+    mutationFn: () => createNextLiveSession(activeLiveId, accessToken),
+    onSuccess: (nextLive) => {
+      window.history.replaceState(null, '', `/admin/lives/${nextLive.id}`);
+      setActiveLiveId(nextLive.id);
     },
+  });
+  const hideMessageMutation = useMutation({
+    mutationFn: (input: { messageId: string; reason: string }) =>
+      hideChatMessage(activeLiveId, input.messageId, input.reason, accessToken),
     onSuccess: (event) => {
-      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeChatMessageHiddenEvent(snapshot, event),
       );
     },
   });
   const timeoutUserMutation = useMutation({
-    mutationFn: (input: { userId: string; durationMinutes: number; reason: string }) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return timeoutChatUser(liveId, input.userId, input, accessToken);
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: liveSnapshotQueryKey(liveId) }),
+    mutationFn: (input: { userId: string; durationMinutes: number; reason: string }) =>
+      timeoutChatUser(activeLiveId, input.userId, input, accessToken),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: liveSnapshotQueryKey(activeLiveId) }),
   });
   const couponMutation = useMutation({
     mutationFn: (input: {
@@ -149,86 +133,47 @@ export function AdminRoom({ liveId }: { liveId: string }) {
       minOrderAmountKrw: number;
       endsAt: string;
       usageLimit: number | null;
-    }) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return publishCoupon(liveId, input, accessToken);
-    },
+    }) => publishCoupon(activeLiveId, input, accessToken),
     onSuccess: (event) => {
-      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeCouponPublishedEvent(snapshot, event),
       );
     },
   });
   const announcementMutation = useMutation({
-    mutationFn: (input: PublishAnnouncementRequest) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return publishAnnouncement(liveId, input, accessToken);
-    },
+    mutationFn: (input: PublishAnnouncementRequest) =>
+      publishAnnouncement(activeLiveId, input, accessToken),
     onSuccess: (event) => {
-      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(liveId), (snapshot) =>
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeAnnouncementPublishedEvent(snapshot, event),
       );
     },
   });
   const chatSummaryMutation = useMutation({
-    mutationFn: () => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return createAiChatSummary(liveId, accessToken);
-    },
+    mutationFn: () => createAiChatSummary(activeLiveId, accessToken),
     onSuccess: () =>
       queryClient.invalidateQueries({
-        queryKey: aiSuggestionsQueryKey(liveId),
+        queryKey: aiSuggestionsQueryKey(activeLiveId),
       }),
   });
   const reviewAiSuggestionMutation = useMutation({
-    mutationFn: (input: { suggestionId: string; review: ReviewAiSuggestionRequest }) => {
-      if (!accessToken) {
-        throw new Error('관리자 세션이 필요합니다.');
-      }
-
-      return reviewAiSuggestion(input.suggestionId, input.review, accessToken);
-    },
+    mutationFn: (input: { suggestionId: string; review: ReviewAiSuggestionRequest }) =>
+      reviewAiSuggestion(input.suggestionId, input.review, accessToken),
     onSuccess: () =>
       queryClient.invalidateQueries({
-        queryKey: aiSuggestionsQueryKey(liveId),
+        queryKey: aiSuggestionsQueryKey(activeLiveId),
       }),
   });
 
-  async function handleLogin(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    setLoginError(null);
-
-    try {
-      const token = await createAdminSession(password);
-      setAccessToken(token);
-      setPassword('');
-    } catch (error: unknown) {
-      setLoginError(
-        error instanceof ApiRequestError
-          ? error.message
-          : '관리자 세션을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.',
-      );
-    }
-  }
-
   if (snapshotQuery.isPending) {
-    return <main className="screen-state">운영자 컨트롤룸을 준비하는 중입니다…</main>;
+    return <ScreenState>운영자 컨트롤룸을 준비하는 중입니다…</ScreenState>;
   }
 
   if (snapshotQuery.isError || !snapshotQuery.data) {
     return (
-      <main className="screen-state" role="alert">
+      <ScreenState tone="error">
         방송 정보를 불러오지 못했습니다. API 서버가 실행 중인지 확인해 주세요.
-      </main>
+      </ScreenState>
     );
   }
 
@@ -250,43 +195,54 @@ export function AdminRoom({ liveId }: { liveId: string }) {
 
   return (
     <main className="admin-shell">
+      <header className="admin-topbar">
+        <div className="admin-topbar-primary">
+          <Link className="admin-topbar-brand" href="/">
+            StreamOps <strong>Elite</strong>
+          </Link>
+          <nav className="admin-desktop-nav" aria-label="운영자 메뉴">
+            <a className="is-active" href="#dashboard">
+              Dashboard
+            </a>
+            <a href="#ai-suggestion-control">Analytics</a>
+            <a href="#orders-inventory-heading">Schedule</a>
+          </nav>
+        </div>
+        <div className="admin-topbar-actions">
+          <span className={`admin-on-air is-${snapshot.live.status.toLowerCase()}`}>
+            <span aria-hidden="true" />
+            {snapshot.live.status === 'LIVE' ? 'LIVE' : snapshot.live.status}
+          </span>
+          <span className="admin-live-duration">01:42:15</span>
+          <span className={`admin-connection-status is-${connectionState.toLowerCase()}`}>
+            {connectionLabel(connectionState)}
+          </span>
+          <Link className="admin-home-link" href="/">
+            홈으로
+          </Link>
+          <Link className="admin-viewer-link" href={`/live/${activeLiveId}`}>
+            시청자 화면 보기 ↗
+          </Link>
+        </div>
+      </header>
+
       <AdminSidebar
-        accessToken={accessToken}
-        liveId={liveId}
-        loginError={loginError}
-        onLogin={handleLogin}
-        onPasswordChange={setPassword}
-        password={password}
+        featuredProductId={snapshot.featuredProduct?.id ?? null}
+        isFeaturingProduct={featureMutation.isPending}
+        liveId={activeLiveId}
+        liveStatus={snapshot.live.status}
+        onFeature={(productId) => featureMutation.mutate(productId)}
+        products={snapshot.products}
       />
 
       <section className="admin-main">
-        <header className="admin-topbar">
-          <div className="admin-live-heading">
-            <span className={`admin-on-air is-${snapshot.live.status.toLowerCase()}`}>
-              <span aria-hidden="true" />
-              {snapshot.live.status === 'LIVE' ? 'ON AIR' : snapshot.live.status}
-            </span>
-            <div>
-              <h1>{snapshot.live.title}</h1>
-              <p>
-                <span>{connectionLabel(connectionState)}</span>
-                <span aria-hidden="true">•</span>
-                서버 저장 후 실시간 반영
-              </p>
-            </div>
-          </div>
-          <Link className="admin-viewer-link" href={`/live/${liveId}`}>
-            시청자 화면 보기 ↗
-          </Link>
-        </header>
-
         <div className="admin-dashboard-scroll" id="dashboard">
           <div className="admin-dashboard-grid">
             <div className="admin-left-column">
               <section className="admin-preview-card" id="broadcast-preview">
                 <header>
                   <h2>◉ 송출 화면 미리보기</h2>
-                  <Link href={`/live/${liveId}`}>전체화면 ↗</Link>
+                  <Link href={`/live/${activeLiveId}`}>전체화면 ↗</Link>
                 </header>
                 <div className="admin-preview-media">
                   <Image
@@ -300,23 +256,7 @@ export function AdminRoom({ liveId }: { liveId: string }) {
                 </div>
               </section>
 
-              <AdminBroadcastControl
-                accessToken={accessToken}
-                error={
-                  broadcastMutation.isError
-                    ? broadcastMutation.error instanceof Error
-                      ? broadcastMutation.error.message
-                      : '방송 상태를 변경하지 못했습니다. 다시 시도해 주세요.'
-                    : null
-                }
-                isPending={broadcastMutation.isPending}
-                onEnd={() => broadcastMutation.mutate('END')}
-                onStart={() => broadcastMutation.mutate('START')}
-                status={snapshot.live.status}
-              />
-
               <AdminProductControl
-                accessToken={accessToken}
                 featuredProductId={snapshot.featuredProduct?.id ?? null}
                 isPending={featureMutation.isPending}
                 mutationStatus={featureMutationStatus}
@@ -324,8 +264,28 @@ export function AdminRoom({ liveId }: { liveId: string }) {
                 products={snapshot.products}
               />
 
+              <AdminBroadcastControl
+                error={
+                  broadcastMutation.isError
+                    ? broadcastMutation.error instanceof Error
+                      ? broadcastMutation.error.message
+                      : '방송 상태를 변경하지 못했습니다. 다시 시도해 주세요.'
+                    : nextSessionMutation.isError
+                      ? nextSessionMutation.error instanceof Error
+                        ? nextSessionMutation.error.message
+                        : '새 방송을 만들지 못했습니다. 다시 시도해 주세요.'
+                      : null
+                }
+                isCreatingNextSession={nextSessionMutation.isPending}
+                isPending={broadcastMutation.isPending}
+                onCreateNextSession={() => nextSessionMutation.mutate()}
+                onEnd={() => broadcastMutation.mutate('END')}
+                onStart={() => broadcastMutation.mutate('START')}
+                status={snapshot.live.status}
+              />
+
               <CouponPublishForm
-                disabled={!accessToken}
+                disabled={false}
                 error={
                   couponMutation.isError
                     ? couponMutation.error instanceof Error
@@ -338,7 +298,7 @@ export function AdminRoom({ liveId }: { liveId: string }) {
               />
 
               <AnnouncementPublishForm
-                disabled={!accessToken}
+                disabled={false}
                 error={
                   announcementMutation.isError
                     ? announcementMutation.error instanceof Error
@@ -362,7 +322,7 @@ export function AdminRoom({ liveId }: { liveId: string }) {
                 }
                 ordersLoading={recentOrdersQuery.isPending}
                 products={snapshot.products}
-                requiresAdminSession={!accessToken}
+                requiresAdminSession={false}
               />
             </div>
 
@@ -395,9 +355,8 @@ export function AdminRoom({ liveId }: { liveId: string }) {
                   : null
               }
               isSummarizing={chatSummaryMutation.isPending}
-              liveId={liveId}
+              liveId={activeLiveId}
               liveStatus={snapshot.live.status}
-              loginError={loginError}
               lowestStockProduct={lowestStockProduct}
               moderationError={
                 hideMessageMutation.isError

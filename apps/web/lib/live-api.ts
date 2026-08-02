@@ -14,6 +14,7 @@ import {
   couponPublishedEventSchema,
   couponRedeemedEventSchema,
   createAiChatSummaryRequestSchema,
+  createNextLiveSessionResponseSchema,
   createProductQuestionRequestSchema,
   createOrderRequestSchema,
   demoSessionResponseSchema,
@@ -41,6 +42,7 @@ import type {
   Coupon,
   CouponPublishedEvent,
   CouponRedeemedEvent,
+  CreateNextLiveSessionResponse,
   CreateOrderRequest,
   InventoryUpdatedEvent,
   LiveStatusChangedEvent,
@@ -176,6 +178,19 @@ export function startLive(liveId: string, accessToken: string): Promise<LiveStat
 
 export function endLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
   return changeLiveStatus(liveId, 'END', accessToken);
+}
+
+export async function createNextLiveSession(
+  liveId: string,
+  accessToken: string,
+): Promise<CreateNextLiveSessionResponse> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/next-session`), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return createNextLiveSessionResponseSchema.parse(body);
 }
 
 export async function fetchChatMessages(
