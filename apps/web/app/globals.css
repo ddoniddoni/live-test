@@ -7196,3 +7196,296 @@ main:not(.viewer-shell):not(.admin-shell):not(.screen-state):not(.home-shell):no
   outline: 3px solid #ffb4a7;
   outline-offset: 3px;
 }
+
+/* Admin AI summary: keep hierarchy readable on the dark operations surface. */
+.admin-ai-card {
+  max-height: 22rem;
+  background: #171f33;
+}
+
+.admin-ai-heading {
+  background: #222a3d;
+}
+
+.admin-ai-heading h2 {
+  color: #fff;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+.admin-ai-description,
+.ai-suggestion-login-note,
+.ai-suggestion-empty {
+  color: #f0c7c0;
+  font-size: 0.68rem;
+  line-height: 1.6;
+}
+
+.admin-ai-description {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #475569;
+  border-radius: 0.35rem;
+  background: #131b2e;
+  color: #f5f7ff;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.ai-summary-trigger {
+  border-color: #ff553d;
+  background: #ff553d;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.admin-ai-card .ai-summary-trigger {
+  display: block;
+  width: auto;
+  max-width: calc(100% - 1.7rem);
+  margin: 0 0.85rem 0.75rem;
+}
+
+.ai-summary-trigger:hover:not(:disabled) {
+  background: #ff6c59;
+}
+
+.ai-suggestion {
+  border: 1px solid #475569;
+  background: #0b1326;
+}
+
+.ai-suggestion > header strong,
+.ai-suggestion-groups strong {
+  color: #fff;
+  font-size: 0.72rem;
+}
+
+.ai-suggestion .ai-suggestion-status {
+  background: #ffe1dc;
+  color: #971c12;
+}
+
+.ai-suggestion.is-approved .ai-suggestion-status {
+  background: #d3fae7;
+  color: #07603c;
+}
+
+.ai-suggestion.is-rejected .ai-suggestion-status,
+.ai-suggestion .ai-suggestion-alert {
+  background: #ffd9d6;
+  color: #a51d17;
+}
+
+.ai-suggestion-groups li {
+  border: 1px solid #334155;
+  background: #171f33;
+}
+
+.ai-suggestion-groups span,
+.ai-suggestion-groups small {
+  color: #b9c3db;
+  font-size: 0.62rem;
+}
+
+.ai-suggestion-groups p {
+  color: #f5f7ff;
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.ai-suggestion .ai-suggestion-groups em {
+  background: #d3fae7;
+  color: #07603c;
+}
+
+.ai-suggestion .ai-suggestion-groups em.is-medium {
+  background: #fff0c7;
+  color: #805300;
+}
+
+.ai-suggestion .ai-suggestion-groups em.is-high {
+  background: #ffd9d6;
+  color: #a51d17;
+}
+
+.ai-suggestion-review label {
+  color: #dae2fd;
+  font-size: 0.64rem;
+}
+
+.ai-suggestion-review textarea,
+.ai-suggestion-review input {
+  border-color: #475569;
+  background: #131b2e;
+  color: #fff;
+  font-size: 0.7rem;
+}
+
+.ai-suggestion-review textarea::placeholder,
+.ai-suggestion-review input::placeholder {
+  color: #b9c3db;
+  opacity: 1;
+}
+
+.ai-suggestion-actions button {
+  background: #ff553d;
+  color: #fff;
+}
+
+.ai-suggestion-actions button.secondary {
+  border-color: #475569;
+  background: #222a3d;
+  color: #dae2fd;
+}
+
+.chat-panel-admin .chat-message-list {
+  padding: 0.75rem;
+  background: #10192c;
+}
+
+.chat-panel-admin .chat-virtual-row {
+  right: 0.75rem;
+  left: 0.75rem;
+}
+
+.chat-panel-admin .chat-message {
+  padding: 0.8rem;
+  border: 1px solid #2f3e5d;
+  border-radius: 0.7rem;
+  background: #1b263c;
+}
+
+.chat-panel-admin .chat-message:hover {
+  background: #202d47;
+}
+
+.chat-panel-admin .chat-message.is-current-user {
+  border-color: #9f839f;
+  background: #302536;
+}
+
+.chat-panel-admin .chat-message-meta {
+  color: #ccd5e8;
+  font-size: 0.68rem;
+}
+
+.chat-panel-admin .chat-message-meta strong {
+  color: #62e8b7;
+  font-size: 0.76rem;
+}
+
+.chat-panel-admin .chat-message.is-current-user .chat-message-meta strong,
+.chat-panel-admin .chat-message.is-current-user .chat-message-meta time {
+  color: #ffc0b5;
+}
+
+.chat-panel-admin .chat-message p {
+  color: #f5f7ff;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.chat-moderation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.chat-moderation-trigger {
+  min-height: 1.8rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #50627f;
+  border-radius: 0.35rem;
+  background: #24314b;
+  color: #e4eaff;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.chat-moderation-trigger:hover,
+.chat-moderation-trigger[aria-expanded='true'] {
+  border-color: #71d7ff;
+  background: #293b5d;
+  color: #fff;
+}
+
+.chat-moderation-trigger.is-danger {
+  border-color: rgb(255 130 117 / 70%);
+  background: #3a2636;
+  color: #ffc0b5;
+}
+
+.chat-moderation-trigger.is-danger:hover,
+.chat-moderation-trigger.is-danger[aria-expanded='true'] {
+  border-color: #ff947f;
+  background: #6a2d35;
+  color: #fff;
+}
+
+.chat-moderation-panel {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+  padding: 0.65rem;
+  border: 1px solid #455a7b;
+  border-radius: 0.5rem;
+  background: #111b30;
+}
+
+.chat-moderation-panel p {
+  margin: 0;
+  color: #c8d4ec;
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.chat-panel-admin .chat-moderation-error {
+  margin: 0.6rem 0.75rem 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #ef887b;
+  border-radius: 0.4rem;
+  background: #482a38;
+  color: #ffe0da;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.chat-panel-admin .chat-moderation input,
+.chat-panel-admin .chat-timeout-control input,
+.chat-panel-admin .chat-timeout-control select {
+  border-color: #475569;
+  background: #131b2e;
+  color: #fff;
+}
+
+.chat-panel-admin .chat-moderation input::placeholder,
+.chat-panel-admin .chat-timeout-control input::placeholder {
+  color: #b9c3db;
+  opacity: 1;
+}
+
+.chat-panel-admin .chat-moderation button,
+.chat-panel-admin .chat-timeout-control button {
+  border-color: rgb(255 85 61 / 65%);
+  background: #422738;
+  color: #fff;
+  font-weight: 800;
+}
+
+.chat-panel-admin .chat-moderation button:not(:disabled):hover,
+.chat-panel-admin .chat-timeout-control button:not(:disabled):hover {
+  background: #ff553d;
+  color: #fff;
+}
+
+.chat-panel-admin .chat-moderation button:disabled,
+.chat-panel-admin .chat-timeout-control button:disabled {
+  border-color: #475569;
+  background: #222a3d;
+  color: #b9c3db;
+  cursor: not-allowed;
+  opacity: 1;
+}

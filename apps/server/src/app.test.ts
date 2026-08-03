@@ -1086,6 +1086,25 @@ describe('chat routes', () => {
     expect(publishRealtimeEvent).toHaveBeenCalledWith(chatMessageHiddenEvent);
   });
 
+  it('allows browser preflight requests for PUT moderation routes', async () => {
+    const app = await buildServer({ liveRepository: createLiveRepository() });
+    servers.push(app);
+
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: `/api/v1/admin/lives/demo/messages/${demoChatMessage.id}/hide`,
+      headers: {
+        origin: 'http://localhost:3000',
+        'access-control-request-headers': 'authorization,content-type',
+        'access-control-request-method': 'PUT',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-methods']).toContain('PUT');
+    expect(response.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+  });
+
   it('allows only an admin to set a viewer timeout and sends the event to that viewer', async () => {
     const liveRepository = createLiveRepository();
     const app = await buildServer({ liveRepository });

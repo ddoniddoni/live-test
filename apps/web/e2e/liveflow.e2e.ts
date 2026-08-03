@@ -42,6 +42,13 @@ test('운영자 변경과 시청자 채팅·주문이 두 브라우저에 실시
     await expect(viewerPage.getByText(message)).toBeVisible();
     await expect(adminPage.getByText(message)).toBeVisible();
 
+    const moderationRow = adminPage.locator('.chat-virtual-row').filter({ hasText: message });
+    await moderationRow.getByRole('button', { name: '메시지 숨기기' }).click();
+    await moderationRow.getByPlaceholder('숨김 사유를 입력하세요').fill('E2E 운영자 숨김');
+    await moderationRow.getByRole('button', { name: '숨김 적용' }).click();
+    await expect(adminPage.getByText(message)).toHaveCount(0);
+    await expect(viewerPage.getByText(message)).toHaveCount(0);
+
     const orderForm = viewerPage.locator('.mock-order-default');
     await orderForm.getByRole('button', { name: 'Mock 주문 확정' }).click();
     await expect(orderForm.getByText('Mock 주문이 확정되었습니다')).toBeVisible();

@@ -177,6 +177,12 @@ export function ChatPanel({
         <span className="chat-count">메시지 {messages.length}개</span>
       </div>
 
+      {moderationError ? (
+        <p className="chat-moderation-error" role="alert">
+          {moderationError}
+        </p>
+      ) : null}
+
       <VirtualizedChatMessageList
         currentUser={currentUser}
         hasMore={hasMore}
@@ -189,12 +195,6 @@ export function ChatPanel({
         pendingMessages={pendingMessages}
         timingOutUserId={timingOutUserId}
       />
-
-      {moderationError ? (
-        <p className="chat-moderation-error" role="alert">
-          {moderationError}
-        </p>
-      ) : null}
 
       {mobileAccessory ? <div className="chat-mobile-accessory">{mobileAccessory}</div> : null}
 

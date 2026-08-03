@@ -633,16 +633,45 @@ export function mergeChatMessageHiddenEvent(
   snapshot: LiveSnapshot | undefined,
   event: ChatMessageHiddenEvent,
 ): LiveSnapshot | undefined {
-  if (!snapshot || event.sequence <= snapshot.lastEventSequence) {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  const snapshotWithoutMessage = removeChatMessageFromSnapshot(snapshot, event.payload.messageId);
+  if (!snapshotWithoutMessage) {
+    return snapshot;
+  }
+
+  const messageWasAlreadyHidden = snapshotWithoutMessage === snapshot;
+
+  if (event.sequence <= snapshot.lastEventSequence && messageWasAlreadyHidden) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshotWithoutMessage,
+    lastEventSequence: Math.max(snapshot.lastEventSequence, event.sequence),
+  };
+}
+
+export function removeChatMessageFromSnapshot(
+  snapshot: LiveSnapshot | undefined,
+  messageId: string,
+): LiveSnapshot | undefined {
+  if (!snapshot) {
+    return snapshot;
+  }
+
+  const messages = snapshot.chat.messages.filter((message) => message.id !== messageId);
+  if (messages.length === snapshot.chat.messages.length) {
     return snapshot;
   }
 
   return {
     ...snapshot,
-    lastEventSequence: event.sequence,
     chat: {
       ...snapshot.chat,
-      messages: snapshot.chat.messages.filter((message) => message.id !== event.payload.messageId),
+      messages,
     },
   };
 }

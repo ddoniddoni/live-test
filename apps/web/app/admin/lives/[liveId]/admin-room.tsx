@@ -17,6 +17,7 @@ import { AdminOrdersInventoryPanel } from '@/components/admin-orders-inventory-p
 import { CouponPublishForm } from '@/components/coupon-publish-form';
 import { ScreenState } from '@/components/screen-state';
 import {
+  ApiRequestError,
   aiSuggestionsQueryKey,
   createAiChatSummary,
   createNextLiveSession,
@@ -35,6 +36,7 @@ import {
   mergeProductFeaturedEvent,
   publishCoupon,
   publishAnnouncement,
+  removeChatMessageFromSnapshot,
   reviewAiSuggestion,
   recentOrdersQueryKey,
   startLive,
@@ -118,6 +120,17 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
       queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeChatMessageHiddenEvent(snapshot, event),
       );
+      void queryClient.invalidateQueries({ queryKey: liveSnapshotQueryKey(activeLiveId) });
+    },
+    onError: (error, input) => {
+      if (!(error instanceof ApiRequestError) || error.code !== 'CHAT_MESSAGE_ALREADY_HIDDEN') {
+        return;
+      }
+
+      queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
+        removeChatMessageFromSnapshot(snapshot, input.messageId),
+      );
+      void queryClient.invalidateQueries({ queryKey: liveSnapshotQueryKey(activeLiveId) });
     },
   });
   const timeoutUserMutation = useMutation({
@@ -192,6 +205,20 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
         ? featureMutation.error.message
         : '상품 변경에 실패했습니다.'
       : '저장 후 실시간 이벤트가 발행됩니다.';
+  const isAlreadyHiddenMessageReconciled =
+    hideMessageMutation.isError &&
+    hideMessageMutation.error instanceof ApiRequestError &&
+    hideMessageMutation.error.code === 'CHAT_MESSAGE_ALREADY_HIDDEN';
+  const moderationError =
+    hideMessageMutation.isError && !isAlreadyHiddenMessageReconciled
+      ? hideMessageMutation.error instanceof Error
+        ? hideMessageMutation.error.message
+        : '메시지를 숨기지 못했습니다. 다시 시도해 주세요.'
+      : timeoutUserMutation.isError
+        ? timeoutUserMutation.error instanceof Error
+          ? timeoutUserMutation.error.message
+          : '사용자를 채팅 제한하지 못했습니다. 다시 시도해 주세요.'
+        : null;
 
   return (
     <main className="admin-shell">
@@ -358,17 +385,7 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
               liveId={activeLiveId}
               liveStatus={snapshot.live.status}
               lowestStockProduct={lowestStockProduct}
-              moderationError={
-                hideMessageMutation.isError
-                  ? hideMessageMutation.error instanceof Error
-                    ? hideMessageMutation.error.message
-                    : '메시지를 숨기지 못했습니다. 다시 시도해 주세요.'
-                  : timeoutUserMutation.isError
-                    ? timeoutUserMutation.error instanceof Error
-                      ? timeoutUserMutation.error.message
-                      : '사용자를 채팅 제한하지 못했습니다. 다시 시도해 주세요.'
-                    : null
-              }
+              moderationError={moderationError}
               onCreateSummary={() => chatSummaryMutation.mutate()}
               onHideMessage={(messageId, reason) =>
                 hideMessageMutation.mutate({ messageId, reason })

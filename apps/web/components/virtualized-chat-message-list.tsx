@@ -20,6 +20,8 @@ type ChatListItem =
   | { kind: 'message'; key: string; message: ChatMessage }
   | { kind: 'pending'; key: string; message: PendingChatMessage };
 
+type ModerationAction = 'hide' | 'timeout';
+
 type VirtualizedChatMessageListProps = {
   currentUser: { id: string; nickname: string; role: Role } | null;
   hasMore: boolean;
@@ -74,6 +76,10 @@ export function VirtualizedChatMessageList({
   timingOutUserId,
 }: VirtualizedChatMessageListProps) {
   const queryClient = useQueryClient();
+  const [activeModeration, setActiveModeration] = useState<{
+    action: ModerationAction;
+    messageId: string;
+  } | null>(null);
   const [isAtLatest, setIsAtLatest] = useState(true);
   const [lastReadMessageSequence, setLastReadMessageSequence] = useState(
     () => messages.at(-1)?.sequence ?? 0,
@@ -210,12 +216,24 @@ export function VirtualizedChatMessageList({
 
           return (
             <ChatListRow
+              activeModerationAction={
+                item.kind === 'message' && activeModeration?.messageId === item.message.id
+                  ? activeModeration.action
+                  : null
+              }
               currentUser={currentUser}
               hidingMessageId={hidingMessageId}
               isLoadingHistory={loadOlderMessagesMutation.isPending}
               key={virtualRow.key}
               onHideMessage={onHideMessage}
               onTimeoutUser={onTimeoutUser}
+              onModerationActionChange={(messageId, action) =>
+                setActiveModeration((current) =>
+                  current?.messageId === messageId && current.action === action
+                    ? null
+                    : { action, messageId },
+                )
+              }
               onLoadOlderMessages={() => loadOlderMessagesMutation.mutate()}
               onRetryMessage={onRetryMessage}
               ref={rowVirtualizer.measureElement}
@@ -238,10 +256,12 @@ export function VirtualizedChatMessageList({
 }
 
 type ChatListRowProps = {
+  activeModerationAction: ModerationAction | null;
   currentUser: { id: string; nickname: string; role: Role } | null;
   hidingMessageId: string | null | undefined;
   isLoadingHistory: boolean;
   onHideMessage: ((messageId: string, reason: string) => void) | undefined;
+  onModerationActionChange: (messageId: string, action: ModerationAction) => void;
   onTimeoutUser: ((userId: string, durationMinutes: number, reason: string) => void) | undefined;
   onLoadOlderMessages: () => void;
   onRetryMessage: (clientMessageId: string, content: string) => void;
@@ -253,10 +273,12 @@ type ChatListRowProps = {
 
 const ChatListRow = forwardRef<HTMLLIElement, ChatListRowProps>(function ChatListRow(
   {
+    activeModerationAction,
     currentUser,
     hidingMessageId,
     isLoadingHistory,
     onHideMessage,
+    onModerationActionChange,
     onTimeoutUser,
     onLoadOlderMessages,
     onRetryMessage,
@@ -327,6 +349,7 @@ const ChatListRow = forwardRef<HTMLLIElement, ChatListRowProps>(function ChatLis
   const isCurrentUser = rowItem.message.sender.id === currentUser?.id;
   const canHideMessage = Boolean(onHideMessage && rowItem.message.sender.role === 'VIEWER');
   const canTimeoutUser = Boolean(onTimeoutUser && rowItem.message.sender.role === 'VIEWER');
+  const canModerateMessage = canHideMessage || canTimeoutUser;
 
   return (
     <li
@@ -343,65 +366,99 @@ const ChatListRow = forwardRef<HTMLLIElement, ChatListRowProps>(function ChatLis
         </time>
       </div>
       <p>{rowItem.message.content}</p>
-      {canHideMessage ? (
-        <div className="chat-moderation">
-          <label className="visually-hidden" htmlFor={`hide-reason-${rowItem.message.id}`}>
-            {rowItem.message.sender.nickname} 메시지를 숨기는 사유
-          </label>
-          <input
-            id={`hide-reason-${rowItem.message.id}`}
-            maxLength={300}
-            onChange={(event) => setHideReason(event.target.value)}
-            placeholder="숨김 사유"
-            value={hideReason}
-          />
-          <button
-            disabled={!hideReason.trim() || hidingMessageId === rowItem.message.id}
-            onClick={() => onHideMessage?.(rowItem.message.id, hideReason.trim())}
-            type="button"
-          >
-            {hidingMessageId === rowItem.message.id ? '숨기는 중' : '숨기기'}
-          </button>
+      {canModerateMessage ? (
+        <div className="chat-moderation-actions">
+          {canHideMessage ? (
+            <button
+              aria-expanded={activeModerationAction === 'hide'}
+              className="chat-moderation-trigger is-danger"
+              onClick={() => onModerationActionChange(rowItem.message.id, 'hide')}
+              type="button"
+            >
+              메시지 숨기기
+            </button>
+          ) : null}
+          {canTimeoutUser ? (
+            <button
+              aria-expanded={activeModerationAction === 'timeout'}
+              className="chat-moderation-trigger"
+              onClick={() => onModerationActionChange(rowItem.message.id, 'timeout')}
+              type="button"
+            >
+              채팅 제한
+            </button>
+          ) : null}
         </div>
       ) : null}
-      {canTimeoutUser ? (
-        <div className="chat-timeout-control">
-          <label className="visually-hidden" htmlFor={`timeout-reason-${rowItem.message.id}`}>
-            {rowItem.message.sender.nickname}의 채팅을 제한하는 사유
-          </label>
-          <input
-            id={`timeout-reason-${rowItem.message.id}`}
-            maxLength={300}
-            onChange={(event) => setTimeoutReason(event.target.value)}
-            placeholder="제한 사유"
-            value={timeoutReason}
-          />
-          <label className="visually-hidden" htmlFor={`timeout-duration-${rowItem.message.id}`}>
-            채팅 제한 시간
-          </label>
-          <select
-            id={`timeout-duration-${rowItem.message.id}`}
-            onChange={(event) => setTimeoutDurationMinutes(Number(event.target.value))}
-            value={timeoutDurationMinutes}
-          >
-            <option value={5}>5분</option>
-            <option value={10}>10분</option>
-            <option value={30}>30분</option>
-            <option value={60}>60분</option>
-          </select>
-          <button
-            disabled={!timeoutReason.trim() || timingOutUserId === rowItem.message.sender.id}
-            onClick={() =>
-              onTimeoutUser?.(
-                rowItem.message.sender.id,
-                timeoutDurationMinutes,
-                timeoutReason.trim(),
-              )
-            }
-            type="button"
-          >
-            {timingOutUserId === rowItem.message.sender.id ? '제한 중' : '채팅 제한'}
-          </button>
+      {canHideMessage && activeModerationAction === 'hide' ? (
+        <div className="chat-moderation-panel" role="group" aria-label="메시지 숨김 설정">
+          <p>숨김 사유를 기록한 뒤 적용하면 이 메시지는 모든 화면에서 사라집니다.</p>
+          <div className="chat-moderation">
+            <label className="visually-hidden" htmlFor={`hide-reason-${rowItem.message.id}`}>
+              {rowItem.message.sender.nickname} 메시지를 숨기는 사유
+            </label>
+            <input
+              id={`hide-reason-${rowItem.message.id}`}
+              maxLength={300}
+              onChange={(event) => setHideReason(event.target.value)}
+              placeholder="숨김 사유를 입력하세요"
+              value={hideReason}
+            />
+            <button
+              disabled={!hideReason.trim() || hidingMessageId === rowItem.message.id}
+              onClick={() => onHideMessage?.(rowItem.message.id, hideReason.trim())}
+              type="button"
+            >
+              {hidingMessageId === rowItem.message.id
+                ? '숨기는 중'
+                : hideReason.trim()
+                  ? '숨김 적용'
+                  : '사유 입력 필요'}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {canTimeoutUser && activeModerationAction === 'timeout' ? (
+        <div className="chat-moderation-panel" role="group" aria-label="사용자 채팅 제한 설정">
+          <p>제한 사유와 시간을 기록한 뒤 적용합니다.</p>
+          <div className="chat-timeout-control">
+            <label className="visually-hidden" htmlFor={`timeout-reason-${rowItem.message.id}`}>
+              {rowItem.message.sender.nickname}의 채팅을 제한하는 사유
+            </label>
+            <input
+              id={`timeout-reason-${rowItem.message.id}`}
+              maxLength={300}
+              onChange={(event) => setTimeoutReason(event.target.value)}
+              placeholder="제한 사유"
+              value={timeoutReason}
+            />
+            <label className="visually-hidden" htmlFor={`timeout-duration-${rowItem.message.id}`}>
+              채팅 제한 시간
+            </label>
+            <select
+              id={`timeout-duration-${rowItem.message.id}`}
+              onChange={(event) => setTimeoutDurationMinutes(Number(event.target.value))}
+              value={timeoutDurationMinutes}
+            >
+              <option value={5}>5분</option>
+              <option value={10}>10분</option>
+              <option value={30}>30분</option>
+              <option value={60}>60분</option>
+            </select>
+            <button
+              disabled={!timeoutReason.trim() || timingOutUserId === rowItem.message.sender.id}
+              onClick={() =>
+                onTimeoutUser?.(
+                  rowItem.message.sender.id,
+                  timeoutDurationMinutes,
+                  timeoutReason.trim(),
+                )
+              }
+              type="button"
+            >
+              {timingOutUserId === rowItem.message.sender.id ? '제한 중' : '채팅 제한'}
+            </button>
+          </div>
         </div>
       ) : null}
     </li>

@@ -18,6 +18,7 @@ export {
 } from './server-configuration.js';
 
 const defaultWebOrigin = 'http://localhost:3000';
+const allowedCorsMethods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
 
 export interface BuildServerOptions {
   aiMode?: string;
@@ -40,6 +41,7 @@ class LiveFlowIoAdapter extends IoAdapter {
       ...options,
       cors: {
         ...options?.cors,
+        methods: allowedCorsMethods,
         origin: this.allowedOrigins,
       },
     });
@@ -96,7 +98,10 @@ export async function buildServer(
     { logger: isTestEnvironment ? false : ['log', 'warn', 'error'] },
   );
 
-  app.enableCors({ origin: configuration.allowedOrigins });
+  app.enableCors({
+    methods: allowedCorsMethods,
+    origin: configuration.allowedOrigins,
+  });
   app.useWebSocketAdapter(new LiveFlowIoAdapter(app, configuration.allowedOrigins));
   app.useGlobalFilters(new ApiExceptionFilter());
   await app.init();

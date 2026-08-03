@@ -17,6 +17,7 @@ import {
   mergeInventoryUpdatedEvent,
   mergeLiveStatusChangedEvent,
   prependChatMessagePage,
+  removeChatMessageFromSnapshot,
 } from './live-api.js';
 
 const snapshot: LiveSnapshot = {
@@ -84,8 +85,39 @@ describe('mergeChatMessageHiddenEvent', () => {
     expect(merged?.lastEventSequence).toBe(5);
   });
 
-  it('ignores a duplicated hidden-message event', () => {
-    expect(mergeChatMessageHiddenEvent(snapshot, { ...hiddenEvent, sequence: 4 })).toBe(snapshot);
+  it('removes a visible message even when another realtime event already advanced the sequence', () => {
+    const snapshotAfterAnotherEvent = {
+      ...snapshot,
+      lastEventSequence: 6,
+    };
+
+    const merged = mergeChatMessageHiddenEvent(snapshotAfterAnotherEvent, hiddenEvent);
+
+    expect(merged?.chat.messages).toEqual([]);
+    expect(merged?.lastEventSequence).toBe(6);
+  });
+
+  it('ignores a duplicated hidden-message event once the message has been removed', () => {
+    const hiddenSnapshot = {
+      ...snapshot,
+      chat: { ...snapshot.chat, messages: [] },
+      lastEventSequence: 5,
+    };
+
+    expect(mergeChatMessageHiddenEvent(hiddenSnapshot, hiddenEvent)).toBe(hiddenSnapshot);
+  });
+});
+
+describe('removeChatMessageFromSnapshot', () => {
+  it('reconciles a locally visible message that the server already hid', () => {
+    const merged = removeChatMessageFromSnapshot(snapshot, 'message-2');
+
+    expect(merged?.chat.messages).toEqual([]);
+    expect(merged?.lastEventSequence).toBe(snapshot.lastEventSequence);
+  });
+
+  it('preserves the snapshot when the message is already absent', () => {
+    expect(removeChatMessageFromSnapshot(snapshot, 'missing-message')).toBe(snapshot);
   });
 });
 
