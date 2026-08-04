@@ -1,12 +1,19 @@
+import Link from 'next/link';
+
 import {
   LOW_STOCK_THRESHOLD,
   type AdminOrder,
   type InventoryLowEvent,
+  type LiveMetrics,
   type Product,
 } from '@liveflow/contracts';
 
 type AdminOrdersInventoryPanelProps = {
   inventoryLowAlerts: InventoryLowEvent[];
+  liveId: string;
+  metrics: LiveMetrics | undefined;
+  metricsError: string | null;
+  metricsLoading: boolean;
   orders: AdminOrder[] | undefined;
   ordersError: string | null;
   ordersLoading: boolean;
@@ -41,6 +48,10 @@ function formatKrw(amount: number): string {
 
 export function AdminOrdersInventoryPanel({
   inventoryLowAlerts,
+  liveId,
+  metrics,
+  metricsError,
+  metricsLoading,
   orders,
   ordersError,
   ordersLoading,
@@ -63,6 +74,9 @@ export function AdminOrdersInventoryPanel({
         <p className="mutation-status">
           재고 {LOW_STOCK_THRESHOLD}개 이하 옵션은 경고로 표시됩니다.
         </p>
+        <Link className="admin-orders-all-link" href={`/admin/orders?liveId=${liveId}`}>
+          전체 주문 보기
+        </Link>
       </div>
 
       {inventoryLowAlerts.length > 0 ? (
@@ -76,6 +90,58 @@ export function AdminOrdersInventoryPanel({
           </span>
         </div>
       ) : null}
+
+      <section className="live-performance-summary" aria-labelledby="live-performance-heading">
+        <div className="live-performance-heading">
+          <div>
+            <p className="panel-kicker">BROADCAST PERFORMANCE</p>
+            <h3 id="live-performance-heading">현재까지 방송 성과</h3>
+          </div>
+          <span>저장된 주문·채팅 기준</span>
+        </div>
+        {requiresAdminSession ? (
+          <p className="admin-data-empty">관리자 세션을 시작하면 방송 성과를 확인할 수 있습니다.</p>
+        ) : metricsLoading ? (
+          <p className="admin-data-empty" role="status">
+            방송 성과를 집계하는 중입니다…
+          </p>
+        ) : metricsError ? (
+          <p className="form-error" role="alert">
+            {metricsError}
+          </p>
+        ) : metrics ? (
+          <dl className="live-performance-grid">
+            <div>
+              <dt>Mock 매출</dt>
+              <dd>{formatKrw(metrics.totalRevenueKrw)}</dd>
+            </div>
+            <div>
+              <dt>결제 완료</dt>
+              <dd>
+                {metrics.paidOrderCount} / {metrics.totalOrderCount}건
+              </dd>
+            </div>
+            <div>
+              <dt>할인 적용</dt>
+              <dd>{formatKrw(metrics.totalDiscountKrw)}</dd>
+            </div>
+            <div>
+              <dt>채팅 수</dt>
+              <dd>{metrics.chatMessageCount}개</dd>
+            </div>
+            <div>
+              <dt>쿠폰 사용</dt>
+              <dd>{metrics.couponUseCount}장</dd>
+            </div>
+            <div>
+              <dt>AI 검토</dt>
+              <dd>
+                완료 {metrics.reviewedAiSuggestionCount} · 대기 {metrics.pendingAiSuggestionCount}
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+      </section>
 
       <div className="admin-orders-inventory-grid">
         <section aria-labelledby="recent-orders-heading">

@@ -11,7 +11,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chatAccessQueryKey,
+  adminOrdersQueryKey,
   hasRealtimeSequenceGap,
+  liveMetricsQueryKey,
   mergeAnnouncementPublishedEvent,
   mergeChatMessageHiddenEvent,
   mergeCouponPublishedEvent,
@@ -87,6 +89,19 @@ describe('hasRealtimeSequenceGap', () => {
   it('does not treat duplicated or older events as a missing sequence', () => {
     expect(hasRealtimeSequenceGap(snapshot, 4)).toBe(false);
     expect(hasRealtimeSequenceGap(snapshot, 3)).toBe(false);
+  });
+});
+
+describe('admin order cache keys', () => {
+  it('keeps an all-broadcast list separate from a single broadcast list', () => {
+    expect(adminOrdersQueryKey()).toEqual(['admin', 'orders', 'ALL']);
+    expect(adminOrdersQueryKey('demo')).toEqual(['admin', 'orders', 'demo']);
+  });
+});
+
+describe('broadcast metrics cache keys', () => {
+  it('keeps metrics isolated to the selected broadcast', () => {
+    expect(liveMetricsQueryKey('demo')).toEqual(['live', 'demo', 'metrics']);
   });
 });
 

@@ -73,6 +73,8 @@ const recommendations = [
   },
 ] as const;
 
+const currentLivePath = '/live';
+
 export default function Home() {
   return (
     <main className="home-shell">
@@ -99,7 +101,7 @@ export default function Home() {
             준비되어 있습니다.
           </p>
           <div className="home-hero-actions">
-            <Link className="home-primary-link" href="/live/demo">
+            <Link className="home-primary-link" href={currentLivePath}>
               Watch Now
             </Link>
             <a className="home-secondary-link" href="#live-now">
@@ -123,14 +125,14 @@ export default function Home() {
           <h2>
             실시간 인기 라이브 <span>HOT</span>
           </h2>
-          <Link href="/live/demo">전체보기 →</Link>
+          <Link href={currentLivePath}>전체보기 →</Link>
         </div>
         <div className="home-live-grid">
           {liveCards.map((liveCard) => (
             <Link
               aria-label={`${liveCard.title} 라이브 보기`}
               className="home-live-card"
-              href="/live/demo"
+              href={currentLivePath}
               key={liveCard.title}
             >
               <Image
@@ -185,7 +187,7 @@ export default function Home() {
           </div>
           <div className="home-recommendation-list">
             {recommendations.map((recommendation) => (
-              <Link href="/live/demo" key={recommendation.title}>
+              <Link href={currentLivePath} key={recommendation.title}>
                 <Image alt="" fill sizes="80px" src={recommendation.image} />
                 <div>
                   <span>{recommendation.match}</span>
@@ -195,7 +197,7 @@ export default function Home() {
               </Link>
             ))}
           </div>
-          <Link className="home-recommendation-more" href="/live/demo">
+          <Link className="home-recommendation-more" href={currentLivePath}>
             맞춤 추천 더 보기
           </Link>
         </aside>
@@ -205,7 +207,7 @@ export default function Home() {
         <h2>라이브 쇼핑의 새로운 물결</h2>
         <p>좋아하는 크리에이터의 소식과 한정판 드롭 정보를 가장 먼저 확인하세요.</p>
         <div>
-          <Link href="/live/demo">라이브 둘러보기</Link>
+          <Link href={currentLivePath}>라이브 둘러보기</Link>
           <Link href="/admin/lives">방송 운영하기</Link>
         </div>
       </section>
@@ -218,7 +220,7 @@ export default function Home() {
         <div className="home-footer-links">
           <a href="#live-now">Live</a>
           <a href="#schedule">Schedule</a>
-          <Link href="/live/demo">Viewer</Link>
+          <Link href={currentLivePath}>Viewer</Link>
           <Link href="/admin/lives">Operator</Link>
         </div>
         <small>© 2026 LiveFlow. All rights reserved.</small>

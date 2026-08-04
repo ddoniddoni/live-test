@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   adminLiveListQuerySchema,
   adminLiveListSchema,
+  adminOrderPageSchema,
+  adminOrdersQuerySchema,
   aiChatSummarySchema,
   aiProductAnswerSchema,
   adminOrderListSchema,
@@ -23,6 +25,7 @@ import {
   createOrderRequestSchema,
   healthResponseSchema,
   hideChatMessageRequestSchema,
+  liveMetricsSchema,
   liveSnapshotSchema,
   productFeaturedEventSchema,
   inventoryUpdatedEventSchema,
@@ -90,6 +93,33 @@ describe('shared contracts', () => {
         },
       }).success,
     ).toBe(true);
+  });
+
+  it('accepts nonnegative persisted broadcast metrics', () => {
+    expect(
+      liveMetricsSchema.safeParse({
+        chatMessageCount: 12,
+        couponUseCount: 3,
+        paidOrderCount: 4,
+        pendingAiSuggestionCount: 1,
+        reviewedAiSuggestionCount: 2,
+        totalDiscountKrw: 6000,
+        totalOrderCount: 5,
+        totalRevenueKrw: 150000,
+      }).success,
+    ).toBe(true);
+    expect(
+      liveMetricsSchema.safeParse({
+        chatMessageCount: -1,
+        couponUseCount: 0,
+        paidOrderCount: 0,
+        pendingAiSuggestionCount: 0,
+        reviewedAiSuggestionCount: 0,
+        totalDiscountKrw: 0,
+        totalOrderCount: 0,
+        totalRevenueKrw: 0,
+      }).success,
+    ).toBe(false);
   });
 
   it('validates one-way live status transitions and their public realtime event', () => {
@@ -474,6 +504,16 @@ describe('shared contracts', () => {
     expect(orderSchema.safeParse(order).success).toBe(true);
     expect(orderParamsSchema.safeParse({ orderId: 'order-1' }).success).toBe(true);
     expect(orderParamsSchema.safeParse({ orderId: '' }).success).toBe(false);
+    expect(
+      adminOrdersQuerySchema.safeParse({ liveId: 'demo', cursor: 'order-1', limit: '20' }).success,
+    ).toBe(true);
+    expect(adminOrdersQuerySchema.safeParse({ limit: 0 }).success).toBe(false);
+    expect(
+      adminOrderPageSchema.safeParse({
+        orders: [{ ...order, customer: { id: 'demo-viewer', nickname: '데모 시청자' } }],
+        nextCursor: null,
+      }).success,
+    ).toBe(true);
     expect(
       inventoryUpdatedEventSchema.safeParse({
         eventId: 'event-8',

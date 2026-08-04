@@ -146,6 +146,19 @@ export type OrdersQuery = z.infer<typeof ordersQuerySchema>;
 
 export const adminOrderListSchema = z.array(adminOrderSchema);
 
+export const adminOrdersQuerySchema = z.object({
+  liveId: liveIdSchema.optional(),
+  cursor: orderIdSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+export type AdminOrdersQuery = z.infer<typeof adminOrdersQuerySchema>;
+
+export const adminOrderPageSchema = z.object({
+  orders: adminOrderListSchema,
+  nextCursor: orderIdSchema.nullable(),
+});
+export type AdminOrderPage = z.infer<typeof adminOrderPageSchema>;
+
 export const liveSessionSchema = z.object({
   id: liveIdSchema,
   title: z.string().min(1),
@@ -453,6 +466,18 @@ export const liveSnapshotSchema = z.object({
   chat: chatMessagePageSchema,
 });
 export type LiveSnapshot = z.infer<typeof liveSnapshotSchema>;
+
+export const liveMetricsSchema = z.object({
+  chatMessageCount: z.int().nonnegative(),
+  couponUseCount: z.int().nonnegative(),
+  paidOrderCount: z.int().nonnegative(),
+  pendingAiSuggestionCount: z.int().nonnegative(),
+  reviewedAiSuggestionCount: z.int().nonnegative(),
+  totalDiscountKrw: z.int().nonnegative(),
+  totalOrderCount: z.int().nonnegative(),
+  totalRevenueKrw: z.int().nonnegative(),
+});
+export type LiveMetrics = z.infer<typeof liveMetricsSchema>;
 
 export const featureProductRequestSchema = z.object({
   productId: z.string().min(1).max(64).nullable(),

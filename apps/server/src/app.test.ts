@@ -13,6 +13,7 @@ import type {
   CouponPublishedEvent,
   InventoryUpdatedEvent,
   InventoryLowEvent,
+  LiveMetrics,
   LiveStatusChangedEvent,
   LiveProduct,
   LiveSnapshot,
@@ -395,10 +396,22 @@ const auditLogPage: AuditLogPage = {
   nextCursor: null,
 };
 
+const demoLiveMetrics: LiveMetrics = {
+  chatMessageCount: 12,
+  couponUseCount: 3,
+  paidOrderCount: 4,
+  pendingAiSuggestionCount: 1,
+  reviewedAiSuggestionCount: 2,
+  totalDiscountKrw: 6_000,
+  totalOrderCount: 5,
+  totalRevenueKrw: 150_000,
+};
+
 function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepository {
   return {
     listAdminLives: vi.fn(async () => adminLiveList),
     getAdminLive: vi.fn(async (liveId: string) => (liveId === draftLive.id ? draftLive : null)),
+    getCurrentLive: vi.fn(async () => demoSnapshot.live),
     listCatalogProducts: vi.fn(async () => demoSnapshot.products),
     getLiveProducts: vi.fn(async (liveId: string) =>
       liveId === draftLive.id
@@ -417,6 +430,11 @@ function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepo
       live: { ...draftLive, status: 'CANCELLED' as const },
     })),
     getSnapshot: vi.fn(async (liveId: string) => (liveId === 'demo' ? demoSnapshot : null)),
+    getLiveMetrics: vi.fn(async (liveId: string) =>
+      liveId === 'demo'
+        ? { kind: 'found' as const, metrics: demoLiveMetrics }
+        : { kind: 'live_not_found' as const },
+    ),
     getMessages: vi.fn(async (liveId: string) => (liveId === 'demo' ? demoSnapshot.chat : null)),
     getChatAccess: vi.fn(async (liveId: string) =>
       liveId === 'demo'
@@ -441,6 +459,10 @@ function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepo
         ? { kind: 'found' as const, order: demoOrder }
         : { kind: 'order_not_found' as const },
     ),
+    listAdminOrders: vi.fn(async () => ({
+      kind: 'found' as const,
+      page: { orders: [demoAdminOrder], nextCursor: null },
+    })),
     getRecentOrders: vi.fn(async () => ({
       kind: 'found',
       orders: [demoAdminOrder],
@@ -524,6 +546,72 @@ describe('GET /health', () => {
       status: 'ok',
       service: 'liveflow-server',
     });
+  });
+});
+
+describe('GET /api/v1/lives/current', () => {
+  it('returns the currently live session without requiring an admin session', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/lives/current' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(demoSnapshot.live);
+    expect(liveRepository.getCurrentLive).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null when no broadcast is currently live', async () => {
+    const liveRepository = createLiveRepository({ getCurrentLive: vi.fn(async () => null) });
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/lives/current' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toBeNull();
+  });
+});
+
+describe('GET /api/v1/admin/lives/:liveId/metrics', () => {
+  it('returns saved broadcast metrics only to an admin session', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const deniedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/lives/demo/metrics',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const grantedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/lives/demo/metrics',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(grantedResponse.statusCode).toBe(200);
+    expect(grantedResponse.json()).toEqual(demoLiveMetrics);
+    expect(liveRepository.getLiveMetrics).toHaveBeenCalledWith('demo');
+  });
+
+  it('returns a not-found response when the broadcast does not exist', async () => {
+    const app = await buildServer({ liveRepository: createLiveRepository() });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/lives/missing/metrics',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: 'LIVE_NOT_FOUND' });
   });
 });
 
@@ -1170,6 +1258,47 @@ describe('live product routes', () => {
     expect(liveRepository.getViewerOrder).toHaveBeenCalledWith({
       orderId: demoOrder.id,
       userId: 'demo-viewer',
+    });
+  });
+
+  it('lets only an admin page through the cursor-based order list', async () => {
+    const listAdminOrders = vi.fn(async () => ({
+      kind: 'found' as const,
+      page: { orders: [demoAdminOrder], nextCursor: 'next-order-cursor' },
+    }));
+    const liveRepository = createLiveRepository({ listAdminOrders });
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const deniedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/orders?liveId=demo&cursor=order-0&limit=20',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const grantedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/orders?liveId=demo&cursor=order-0&limit=20',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const invalidResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/orders?limit=0',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(grantedResponse.statusCode).toBe(200);
+    expect(grantedResponse.json()).toEqual({
+      orders: [demoAdminOrder],
+      nextCursor: 'next-order-cursor',
+    });
+    expect(invalidResponse.statusCode).toBe(400);
+    expect(listAdminOrders).toHaveBeenCalledWith({
+      liveId: 'demo',
+      cursor: 'order-0',
+      limit: 20,
     });
   });
 });

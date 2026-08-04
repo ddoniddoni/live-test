@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type {
   AdminLiveSession,
   AdminLiveListQuery,
+  AdminOrdersQuery,
   AuditLogsQuery,
   ChatMessage,
   ChatMessagesQuery,
@@ -31,8 +32,16 @@ export class LiveService {
     return this.liveRepository.getSnapshot(liveId);
   }
 
+  getLiveMetrics(liveId: string) {
+    return this.liveRepository.getLiveMetrics(liveId);
+  }
+
   getAdminLive(liveId: string): Promise<AdminLiveSession | null> {
     return this.liveRepository.getAdminLive(liveId);
+  }
+
+  getCurrentLive() {
+    return this.liveRepository.getCurrentLive();
   }
 
   listAdminLives(query: AdminLiveListQuery) {
@@ -97,6 +106,10 @@ export class LiveService {
 
   getViewerOrder(input: { orderId: string; userId: string }) {
     return this.liveRepository.getViewerOrder(input);
+  }
+
+  listAdminOrders(query: AdminOrdersQuery) {
+    return this.liveRepository.listAdminOrders(query);
   }
 
   getRecentOrders(liveId: string, query: OrdersQuery) {

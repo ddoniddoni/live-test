@@ -22,10 +22,12 @@ import {
   endLive,
   featureProduct,
   fetchAiSuggestions,
+  fetchLiveMetrics,
   fetchLiveSnapshot,
   fetchRecentOrders,
   hideChatMessage,
   liveSnapshotQueryKey,
+  liveMetricsQueryKey,
   inventoryLowAlertsQueryKey,
   mergeChatMessageHiddenEvent,
   mergeAnnouncementPublishedEvent,
@@ -76,6 +78,10 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
   const recentOrdersQuery = useQuery({
     queryKey: recentOrdersQueryKey(activeLiveId),
     queryFn: () => fetchRecentOrders(activeLiveId, { limit: 10 }, accessToken),
+  });
+  const liveMetricsQuery = useQuery({
+    queryKey: liveMetricsQueryKey(activeLiveId),
+    queryFn: () => fetchLiveMetrics(activeLiveId, accessToken),
   });
   const inventoryLowAlertsQuery = useQuery({
     queryKey: inventoryLowAlertsQueryKey(activeLiveId),
@@ -158,18 +164,22 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
   });
   const chatSummaryMutation = useMutation({
     mutationFn: () => createAiChatSummary(activeLiveId, accessToken),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
         queryKey: aiSuggestionsQueryKey(activeLiveId),
-      }),
+      });
+      void queryClient.invalidateQueries({ queryKey: liveMetricsQueryKey(activeLiveId) });
+    },
   });
   const reviewAiSuggestionMutation = useMutation({
     mutationFn: (input: { suggestionId: string; review: ReviewAiSuggestionRequest }) =>
       reviewAiSuggestion(input.suggestionId, input.review, accessToken),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
         queryKey: aiSuggestionsQueryKey(activeLiveId),
-      }),
+      });
+      void queryClient.invalidateQueries({ queryKey: liveMetricsQueryKey(activeLiveId) });
+    },
   });
 
   if (snapshotQuery.isPending) {
@@ -340,6 +350,16 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
 
               <AdminOrdersInventoryPanel
                 inventoryLowAlerts={inventoryLowAlertsQuery.data}
+                liveId={activeLiveId}
+                metrics={liveMetricsQuery.data}
+                metricsError={
+                  liveMetricsQuery.isError
+                    ? liveMetricsQuery.error instanceof Error
+                      ? liveMetricsQuery.error.message
+                      : '방송 성과를 불러오지 못했습니다. 다시 시도해 주세요.'
+                    : null
+                }
+                metricsLoading={liveMetricsQuery.isPending}
                 orders={recentOrdersQuery.data}
                 ordersError={
                   recentOrdersQuery.isError

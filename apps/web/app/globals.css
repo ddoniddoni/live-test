@@ -249,6 +249,8 @@ h4,
 /* Landing page */
 main:not(.viewer-shell):not(.admin-shell):not(.screen-state):not(.home-shell):not(
     .admin-access-shell
+  ):not(.admin-live-manager-shell):not(.broadcast-preparation-shell):not(.order-result-shell):not(
+    .audit-log-shell
   ) {
   width: min(100% - 2rem, 70rem);
   margin: 0 auto;
@@ -7904,6 +7906,272 @@ main:not(.viewer-shell):not(.admin-shell):not(.screen-state):not(.home-shell):no
   opacity: 0.55;
 }
 
+.admin-order-list-section {
+  width: min(100%, 76rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 4vw, 1.75rem);
+  border: 1px solid #334155;
+  border-radius: 1rem;
+  background: rgb(23 31 51 / 92%);
+  box-shadow: 0 1.2rem 3rem rgb(0 0 0 / 18%);
+}
+
+.admin-order-list-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-order-list-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.45rem;
+}
+
+.admin-order-list-heading .panel-kicker {
+  color: #ffb4a7;
+}
+
+.admin-order-list-heading h2 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(1.2rem, 3vw, 1.65rem);
+  letter-spacing: -0.045em;
+}
+
+.admin-order-list-actions {
+  display: flex;
+  flex: none;
+  align-items: end;
+  gap: 0.65rem;
+}
+
+.admin-order-refresh-button {
+  min-height: 2.6rem;
+  white-space: nowrap;
+}
+
+.admin-order-live-filter {
+  display: grid;
+  flex: none;
+  min-width: min(100%, 13rem);
+  gap: 0.35rem;
+  color: #c7d2ef;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.admin-order-live-filter select {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.5rem 2rem 0.5rem 0.7rem;
+  border: 1px solid #475569;
+  border-radius: 0.55rem;
+  background: #0b1326;
+  color: #fff;
+  font: inherit;
+}
+
+.admin-order-filter-error {
+  margin: 1rem 0 0;
+  color: #ffcfbf;
+  font-size: 0.74rem;
+}
+
+.admin-order-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 1.25rem 0 0;
+}
+
+.admin-order-summary div {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #334155;
+  border-radius: 0.7rem;
+  background: #10192c;
+}
+
+.admin-order-summary dt {
+  color: #a9b8d8;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.admin-order-summary dd {
+  margin: 0.35rem 0 0;
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-size: clamp(0.9rem, 2vw, 1.05rem);
+  font-weight: 900;
+}
+
+.admin-order-state {
+  margin: 1rem 0 0;
+  padding: 1.35rem 1rem;
+  border: 1px dashed #536887;
+  border-radius: 0.7rem;
+  color: #c7d2ef;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.admin-order-state h3,
+.admin-order-state p {
+  margin: 0;
+}
+
+.admin-order-state p {
+  margin-top: 0.35rem;
+}
+
+.admin-order-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-order-list li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid #334155;
+  border-radius: 0.7rem;
+  background: #10192c;
+}
+
+.admin-order-row-primary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4rem 0.55rem;
+}
+
+.admin-order-row-primary > strong {
+  color: #fff;
+  font-size: 0.82rem;
+}
+
+.admin-order-status {
+  display: inline-flex;
+  min-height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #d3fae7;
+  color: #07603c;
+  font-size: 0.62rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.admin-order-status.is-pending {
+  background: #fff0c7;
+  color: #805300;
+}
+
+.admin-order-status.is-failed,
+.admin-order-status.is-cancelled {
+  background: #ffd9d6;
+  color: #a51d17;
+}
+
+.admin-order-broadcast,
+.admin-order-row-primary p,
+.admin-order-row-secondary time {
+  overflow: hidden;
+  color: #aebdda;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-order-row-primary p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #d7e1f8;
+}
+
+.admin-order-row-secondary {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  gap: 0.28rem;
+}
+
+.admin-order-row-secondary > strong {
+  color: #fff;
+  font-size: 0.84rem;
+}
+
+.admin-order-row-secondary a {
+  color: #ffb4a7;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.admin-order-more-button {
+  width: 100%;
+  margin-top: 0.85rem;
+}
+
+.admin-order-error-state {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 42rem;
+}
+
+.admin-order-error-state .panel-kicker {
+  color: #ffb4a7;
+}
+
+.admin-order-error-state h1,
+.admin-order-error-state p {
+  margin: 0;
+}
+
+.admin-order-error-state h1 {
+  color: #fff;
+  font-size: clamp(1.45rem, 4vw, 2.2rem);
+  letter-spacing: -0.05em;
+}
+
+.admin-order-error-state p:not(.panel-kicker) {
+  color: #c7d2ef;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.admin-orders-all-link {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #ffb4a7;
+  border-radius: 0.4rem;
+  color: #ffb4a7;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.admin-orders-all-link:hover {
+  background: rgb(255 180 167 / 12%);
+  color: #fff;
+}
+
 .broadcast-preparation-shell {
   min-height: 100vh;
   padding: clamp(1rem, 4vw, 3rem);
@@ -8210,6 +8478,39 @@ main:not(.viewer-shell):not(.admin-shell):not(.screen-state):not(.home-shell):no
 
   .admin-live-draft-form-actions > button {
     flex: 1 1 0;
+  }
+
+  .admin-order-list-heading,
+  .admin-order-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-order-live-filter {
+    width: 100%;
+  }
+
+  .admin-order-list-actions {
+    display: grid;
+    width: 100%;
+  }
+
+  .admin-order-refresh-button {
+    width: 100%;
+  }
+
+  .admin-order-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-order-row-secondary {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    justify-items: start;
+  }
+
+  .admin-order-row-secondary > strong {
+    min-width: 0;
   }
 
   .broadcast-preparation-header,
@@ -8533,4 +8834,411 @@ main:not(.viewer-shell):not(.admin-shell):not(.screen-state):not(.home-shell):no
   color: #b9c3db;
   cursor: not-allowed;
   opacity: 1;
+}
+
+/* Admin control room readability pass: operational copy and controls stay legible at desktop scale. */
+.admin-shell {
+  grid-template-columns: 20rem minmax(0, 1fr);
+  grid-template-rows: 4.5rem minmax(0, 1fr);
+}
+
+.admin-topbar {
+  height: 4.5rem;
+}
+
+.admin-topbar-brand {
+  font-size: 1.16rem;
+}
+
+.admin-desktop-nav a,
+.admin-home-link,
+.admin-on-air,
+.admin-live-duration,
+.admin-connection-status,
+.admin-connection-retry {
+  font-size: 0.78rem;
+}
+
+.admin-home-link {
+  min-height: 2.4rem;
+  padding-inline: 0.75rem;
+}
+
+.admin-sidebar {
+  padding: 1rem;
+}
+
+.admin-sidebar-heading h2,
+.admin-sidebar-heading > span,
+.admin-profile small,
+.admin-session-card,
+.admin-stream-metrics dt {
+  font-size: 0.76rem;
+}
+
+.admin-profile strong,
+.admin-stream-metrics dd {
+  font-size: 0.88rem;
+}
+
+.admin-session-card strong {
+  font-size: 0.82rem;
+}
+
+.admin-session-card small {
+  font-size: 0.75rem;
+}
+
+.admin-broadcast-button {
+  min-height: 2.6rem;
+  font-size: 0.84rem;
+}
+
+.admin-dashboard-scroll {
+  padding: 1rem;
+}
+
+.admin-dashboard-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(25rem, 28rem);
+  gap: 1rem;
+}
+
+.admin-left-column,
+.admin-right-column {
+  gap: 1rem;
+}
+
+.admin-shell .panel-kicker {
+  font-size: 0.72rem;
+}
+
+.admin-shell .section-heading h2,
+.admin-shell .broadcast-control h2,
+.admin-shell .admin-ai-heading h2,
+.admin-shell .admin-orders-inventory h2,
+.admin-shell .admin-orders-inventory h3 {
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  text-wrap: pretty;
+}
+
+.admin-shell .mutation-status,
+.admin-shell .broadcast-control-status,
+.admin-shell .admin-ai-description,
+.admin-shell .ai-suggestion-login-note,
+.admin-shell .ai-suggestion-empty,
+.admin-shell .admin-data-empty,
+.admin-shell .low-stock-summary {
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.admin-product {
+  padding: 0.75rem;
+}
+
+.admin-product-copy > span,
+.admin-product-copy small {
+  font-size: 0.76rem;
+}
+
+.admin-product-copy .product-name,
+.admin-product-copy strong {
+  font-size: 0.92rem;
+}
+
+.admin-product > button,
+.broadcast-control button,
+.broadcast-control .broadcast-control-next,
+.coupon-form-submit button,
+.announcement-form-submit button,
+.ai-summary-trigger {
+  min-height: 2.6rem;
+  font-size: 0.84rem;
+}
+
+.broadcast-control {
+  min-height: 6.5rem;
+  padding: 1rem;
+}
+
+.coupon-control,
+.announcement-control,
+.admin-orders-inventory {
+  padding: 1rem;
+}
+
+.coupon-form {
+  grid-template-columns: repeat(2, minmax(10.5rem, 14rem));
+  max-width: 29rem;
+  gap: 0.85rem;
+}
+
+.coupon-form label,
+.announcement-form > label {
+  font-size: 0.82rem;
+}
+
+.coupon-form input,
+.coupon-form select {
+  min-height: 2.75rem;
+  font-size: 0.9rem;
+}
+
+.coupon-form-submit {
+  max-width: 14rem;
+}
+
+.announcement-form {
+  max-width: 42rem;
+  gap: 0.6rem;
+}
+
+.announcement-form textarea {
+  min-height: 6.5rem;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.announcement-form-submit p:first-child {
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.admin-orders-all-link {
+  min-height: 2.2rem;
+  font-size: 0.76rem;
+}
+
+.recent-order-list strong,
+.variant-stock-list strong,
+.recent-order-list span,
+.variant-stock-list span,
+.inventory-low-alert {
+  font-size: 0.78rem;
+}
+
+.admin-ai-card {
+  max-height: 24rem;
+}
+
+.admin-ai-heading {
+  padding: 0.9rem 1rem;
+}
+
+.ai-summary-trigger {
+  margin-inline: 1rem;
+}
+
+.ai-suggestion,
+.admin-ai-description,
+.ai-suggestion-login-note,
+.ai-suggestion-empty {
+  margin-inline: 1rem;
+}
+
+.ai-suggestion-review label,
+.ai-suggestion-review textarea,
+.ai-suggestion-review input,
+.ai-suggestion-groups span,
+.ai-suggestion-groups small,
+.ai-suggestion-groups p {
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.chat-panel-admin {
+  min-height: 32rem;
+  flex-basis: 32rem;
+}
+
+.chat-panel-admin .chat-panel-header h2 {
+  font-size: 1.1rem;
+}
+
+.chat-panel-admin .chat-count,
+.chat-panel-admin .chat-message-meta,
+.chat-panel-admin .chat-form-status,
+.chat-panel-admin .chat-moderation-panel p,
+.chat-panel-admin .chat-moderation-error {
+  font-size: 0.78rem;
+}
+
+.chat-panel-admin .chat-message-meta strong,
+.chat-panel-admin .chat-message p {
+  font-size: 0.92rem;
+}
+
+.chat-panel-admin .chat-form {
+  padding: 1rem;
+}
+
+.chat-panel-admin .chat-form label {
+  display: block;
+  color: #e5ecff;
+  font-size: 0.82rem;
+}
+
+.chat-panel-admin .chat-form textarea {
+  min-height: 4.5rem;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.chat-panel-admin .chat-form-actions > button,
+.chat-panel-admin .chat-moderation-trigger,
+.chat-panel-admin .chat-moderation button,
+.chat-panel-admin .chat-timeout-control button {
+  min-height: 2.4rem;
+  font-size: 0.8rem;
+}
+
+.chat-panel-admin .chat-moderation input,
+.chat-panel-admin .chat-timeout-control input,
+.chat-panel-admin .chat-timeout-control select {
+  min-height: 2.4rem;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 80rem) {
+  .admin-shell {
+    grid-template-columns: 18rem minmax(0, 1fr);
+  }
+
+  .admin-dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-right-column {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .chat-panel-admin {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 56rem) {
+  .admin-shell {
+    display: flex;
+    height: auto;
+    min-height: 100vh;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .admin-sidebar {
+    display: none;
+  }
+
+  .admin-topbar {
+    height: auto;
+    min-height: 4.5rem;
+    flex-wrap: wrap;
+    padding-block: 0.7rem;
+  }
+
+  .admin-desktop-nav,
+  .admin-live-duration,
+  .admin-connection-status,
+  .admin-connection-retry {
+    display: none;
+  }
+
+  .admin-main {
+    min-height: auto;
+  }
+
+  .admin-dashboard-scroll {
+    overflow: visible;
+  }
+
+  .admin-right-column {
+    display: flex;
+  }
+
+  .coupon-form {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+
+  .coupon-form-submit,
+  .announcement-form {
+    max-width: none;
+  }
+}
+
+.live-performance-summary {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #2e4268;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #111e36 0%, #0d172a 100%);
+}
+
+.live-performance-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.live-performance-heading .panel-kicker {
+  margin: 0;
+}
+
+.live-performance-heading h3 {
+  margin: 0.3rem 0 0;
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.live-performance-heading > span {
+  padding-top: 0.15rem;
+  color: #aab9d4;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.live-performance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0.9rem 0 0;
+}
+
+.live-performance-grid > div {
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid #2c3c5d;
+  border-radius: 0.55rem;
+  background: rgba(4, 12, 29, 0.55);
+}
+
+.live-performance-grid dt {
+  color: #aab9d4;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.live-performance-grid dd {
+  margin: 0.35rem 0 0;
+  color: #f7f9ff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 56rem) {
+  .live-performance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

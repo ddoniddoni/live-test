@@ -4,6 +4,8 @@ import type {
   AdminLiveListQuery,
   AdminLiveSession,
   AdminOrder,
+  AdminOrderPage,
+  AdminOrdersQuery,
   AiChatSummary,
   AiSuggestion,
   AiSuggestionCreatedEvent,
@@ -27,6 +29,7 @@ import type {
   InventoryLowEvent,
   LiveStatusChangedEvent,
   LiveProduct,
+  LiveMetrics,
   LiveSnapshot,
   LiveStatusTransitionAction,
   Order,
@@ -405,6 +408,24 @@ export type GetOrdersResult =
       kind: 'live_not_found';
     };
 
+export type GetAdminOrdersResult =
+  | {
+      kind: 'found';
+      page: AdminOrderPage;
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
+export type GetLiveMetricsResult =
+  | {
+      kind: 'found';
+      metrics: LiveMetrics;
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
 export type CreateAiSuggestionResult =
   | {
       kind: 'created';
@@ -435,6 +456,7 @@ export type ReviewAiSuggestionResult =
 export interface LiveRepository {
   listAdminLives(query: AdminLiveListQuery): Promise<AdminLiveList>;
   getAdminLive(liveId: string): Promise<AdminLiveSession | null>;
+  getCurrentLive(): Promise<LiveSnapshot['live'] | null>;
   listCatalogProducts(): Promise<Product[]>;
   getLiveProducts(liveId: string): Promise<GetLiveProductsResult>;
   replaceLiveProducts(input: {
@@ -453,6 +475,7 @@ export interface LiveRepository {
   }): Promise<UpdateLiveDraftResult>;
   cancelLiveDraft(input: { actorId: string; liveId: string }): Promise<CancelLiveDraftResult>;
   getSnapshot(liveId: string): Promise<LiveSnapshot | null>;
+  getLiveMetrics(liveId: string): Promise<GetLiveMetricsResult>;
   getMessages(liveId: string, query: ChatMessagesQuery): Promise<ChatMessagePage | null>;
   getChatAccess(liveId: string, userId: string): Promise<GetChatAccessResult>;
   createMessage(input: {
@@ -470,6 +493,7 @@ export interface LiveRepository {
     idempotencyKey: string;
   }): Promise<CreateOrderResult>;
   getViewerOrder(input: { orderId: string; userId: string }): Promise<GetViewerOrderResult>;
+  listAdminOrders(query: AdminOrdersQuery): Promise<GetAdminOrdersResult>;
   getRecentOrders(liveId: string, query: OrdersQuery): Promise<GetOrdersResult>;
   hideMessage(input: {
     liveId: string;
@@ -858,6 +882,22 @@ export const prismaLiveRepository: LiveRepository = {
     });
 
     return live ? toAdminLiveSessionDto(live) : null;
+  },
+
+  async getCurrentLive() {
+    const live = await prisma.liveSession.findFirst({
+      where: { status: 'LIVE' },
+      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+      },
+    });
+
+    return live ? toLiveSessionDto(live) : null;
   },
 
   async listCatalogProducts() {
@@ -1249,6 +1289,54 @@ export const prismaLiveRepository: LiveRepository = {
       activeCoupon,
       latestAnnouncement,
     );
+  },
+
+  async getLiveMetrics(liveId) {
+    const live = await prisma.liveSession.findUnique({
+      where: { id: liveId },
+      select: { id: true },
+    });
+
+    if (!live) {
+      return { kind: 'live_not_found' } as const;
+    }
+
+    const [
+      chatMessageCount,
+      couponUsage,
+      paidOrderSummary,
+      totalOrderCount,
+      pendingAiSuggestionCount,
+      reviewedAiSuggestionCount,
+    ] = await Promise.all([
+      prisma.chatMessage.count({ where: { room: { liveId } } }),
+      prisma.coupon.aggregate({
+        where: { liveId },
+        _sum: { usedCount: true },
+      }),
+      prisma.order.aggregate({
+        where: { liveId, status: 'PAID' },
+        _count: { _all: true },
+        _sum: { discountKrw: true, totalKrw: true },
+      }),
+      prisma.order.count({ where: { liveId } }),
+      prisma.aiSuggestion.count({ where: { liveId, status: 'PENDING' } }),
+      prisma.aiSuggestion.count({ where: { liveId, status: { not: 'PENDING' } } }),
+    ]);
+
+    return {
+      kind: 'found',
+      metrics: {
+        chatMessageCount,
+        couponUseCount: couponUsage._sum.usedCount ?? 0,
+        paidOrderCount: paidOrderSummary._count._all,
+        pendingAiSuggestionCount,
+        reviewedAiSuggestionCount,
+        totalDiscountKrw: paidOrderSummary._sum.discountKrw ?? 0,
+        totalOrderCount,
+        totalRevenueKrw: paidOrderSummary._sum.totalKrw ?? 0,
+      },
+    } as const;
   },
 
   async getMessages(liveId, query) {
@@ -1852,6 +1940,34 @@ export const prismaLiveRepository: LiveRepository = {
     }
 
     return { kind: 'found', order: toOrderDto(order) } as const;
+  },
+
+  async listAdminOrders(query) {
+    const orderQuery = prisma.order.findMany({
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      include: adminOrderRecordInclude,
+      ...(query.liveId ? { where: { liveId: query.liveId } } : {}),
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+    });
+    const liveQuery = query.liveId
+      ? prisma.liveSession.findUnique({ where: { id: query.liveId }, select: { id: true } })
+      : Promise.resolve(null);
+    const [orders, live] = await Promise.all([orderQuery, liveQuery]);
+
+    if (query.liveId && !live) {
+      return { kind: 'live_not_found' } as const;
+    }
+
+    const pageOrders = orders.slice(0, query.limit);
+
+    return {
+      kind: 'found',
+      page: {
+        orders: pageOrders.map(toAdminOrderDto),
+        nextCursor: orders.length > query.limit ? (pageOrders.at(-1)?.id ?? null) : null,
+      },
+    } as const;
   },
 
   async getRecentOrders(liveId, query) {

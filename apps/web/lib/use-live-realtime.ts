@@ -20,6 +20,7 @@ import {
   getSocketUrl,
   hasRealtimeSequenceGap,
   inventoryLowAlertsQueryKey,
+  liveMetricsQueryKey,
   liveSnapshotQueryKey,
   mergeAnnouncementPublishedEvent,
   mergeChatMessage,
@@ -144,6 +145,7 @@ export function useLiveRealtime(
         queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
           mergeCouponRedeemedEvent(currentSnapshot, liveEvent),
         );
+        void queryClient.invalidateQueries({ queryKey: liveMetricsQueryKey(liveId) });
         return;
       }
 
@@ -159,6 +161,7 @@ export function useLiveRealtime(
           advanceEventSequence(currentSnapshot, liveEvent.sequence),
         );
         void queryClient.invalidateQueries({ queryKey: aiSuggestionsQueryKey(liveId) });
+        void queryClient.invalidateQueries({ queryKey: liveMetricsQueryKey(liveId) });
         return;
       }
 
@@ -181,6 +184,7 @@ export function useLiveRealtime(
           advanceEventSequence(currentSnapshot, liveEvent.sequence),
         );
         void queryClient.invalidateQueries({ queryKey: recentOrdersQueryKey(liveId) });
+        void queryClient.invalidateQueries({ queryKey: liveMetricsQueryKey(liveId) });
         return;
       }
 
@@ -221,6 +225,7 @@ export function useLiveRealtime(
           ? { ...mergedSnapshot, lastEventSequence: liveEvent.sequence }
           : mergedSnapshot;
       });
+      void queryClient.invalidateQueries({ queryKey: liveMetricsQueryKey(liveId) });
     };
 
     const synchronizeState = async (afterMessageSequence: number): Promise<void> => {

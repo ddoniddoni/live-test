@@ -134,6 +134,9 @@ export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLi
           <Link className="admin-live-secondary-link" href="/">
             시청자 홈
           </Link>
+          <Link className="admin-live-secondary-link" href="/admin/orders">
+            주문 관리
+          </Link>
           <Link className="admin-live-primary-link" href="/admin/lives/new">
             새 방송 만들기
           </Link>

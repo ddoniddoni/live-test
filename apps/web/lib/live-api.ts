@@ -1,6 +1,8 @@
 import {
   adminLiveListSchema,
   adminLiveSessionSchema,
+  adminOrderPageSchema,
+  adminOrdersQuerySchema,
   aiSuggestionListSchema,
   aiSuggestionSchema,
   aiProductAnswerSchema,
@@ -22,6 +24,8 @@ import {
   createOrderRequestSchema,
   demoSessionResponseSchema,
   inventoryUpdatedEventSchema,
+  liveMetricsSchema,
+  liveSessionSchema,
   liveStatusChangedEventSchema,
   liveSnapshotSchema,
   orderSchema,
@@ -37,6 +41,8 @@ import {
 import type {
   AdminLiveList,
   AdminLiveSession,
+  AdminOrderPage,
+  AdminOrdersQuery,
   ApiErrorResponse,
   AiSuggestion,
   AiProductAnswer,
@@ -55,6 +61,8 @@ import type {
   CreateNextLiveSessionResponse,
   CreateOrderRequest,
   InventoryUpdatedEvent,
+  LiveMetrics,
+  LiveSession,
   LiveStatusChangedEvent,
   LiveStatus,
   LiveStatusTransitionAction,
@@ -132,6 +140,10 @@ export function recentOrdersQueryKey(liveId: string): readonly ['live', string, 
   return ['live', liveId, 'recent-orders'];
 }
 
+export function liveMetricsQueryKey(liveId: string): readonly ['live', string, 'metrics'] {
+  return ['live', liveId, 'metrics'];
+}
+
 export function viewerOrderQueryKey(orderId: string): readonly ['viewer', 'orders', string] {
   return ['viewer', 'orders', orderId];
 }
@@ -152,6 +164,10 @@ export function adminLiveQueryKey(liveId: string): readonly ['admin', 'lives', s
   return ['admin', 'lives', liveId];
 }
 
+export function adminOrdersQueryKey(liveId?: string): readonly ['admin', 'orders', string | 'ALL'] {
+  return ['admin', 'orders', liveId ?? 'ALL'];
+}
+
 export function productCatalogQueryKey(): readonly ['admin', 'products', 'catalog'] {
   return ['admin', 'products', 'catalog'];
 }
@@ -165,6 +181,13 @@ export function liveProductsQueryKey(
 export async function fetchLiveSnapshot(liveId: string): Promise<LiveSnapshot> {
   const body = await readResponse(await fetch(getApiUrl(`/api/v1/lives/${liveId}/snapshot`)));
   return liveSnapshotSchema.parse(body);
+}
+
+export async function fetchCurrentLive(): Promise<LiveSession | null> {
+  const body = await readResponse(
+    await fetch(getApiUrl('/api/v1/lives/current'), { cache: 'no-store' }),
+  );
+  return liveSessionSchema.nullable().parse(body);
 }
 
 export async function createViewerSession(): Promise<string> {
@@ -505,6 +528,36 @@ export async function fetchRecentOrders(
     }),
   );
   return adminOrderListSchema.parse(body);
+}
+
+export async function fetchLiveMetrics(liveId: string, accessToken: string): Promise<LiveMetrics> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/metrics`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return liveMetricsSchema.parse(body);
+}
+
+export async function fetchAdminOrders(
+  query: Partial<AdminOrdersQuery>,
+  accessToken: string,
+): Promise<AdminOrderPage> {
+  const parsedQuery = adminOrdersQuerySchema.parse(query);
+  const searchParams = new URLSearchParams({ limit: String(parsedQuery.limit) });
+  if (parsedQuery.liveId) {
+    searchParams.set('liveId', parsedQuery.liveId);
+  }
+  if (parsedQuery.cursor) {
+    searchParams.set('cursor', parsedQuery.cursor);
+  }
+
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/orders?${searchParams.toString()}`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return adminOrderPageSchema.parse(body);
 }
 
 export async function createAiChatSummary(

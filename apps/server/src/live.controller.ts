@@ -16,6 +16,8 @@ import {
   adminLiveListQuerySchema,
   adminLiveListSchema,
   adminLiveSessionSchema,
+  adminOrderPageSchema,
+  adminOrdersQuerySchema,
   aiSuggestionListSchema,
   aiSuggestionParamsSchema,
   aiSuggestionSchema,
@@ -38,6 +40,7 @@ import {
   healthResponseSchema,
   hideChatMessageRequestSchema,
   liveParamsSchema,
+  liveMetricsSchema,
   liveStatusChangedEventSchema,
   liveSnapshotSchema,
   couponPublishedEventSchema,
@@ -148,6 +151,27 @@ export class LiveController {
     }
 
     return adminLiveSessionSchema.parse(live);
+  }
+
+  @Get('api/v1/lives/current')
+  async getCurrentLive() {
+    return liveSessionSchema.nullable().parse(await this.liveService.getCurrentLive());
+  }
+
+  @Get('api/v1/admin/lives/:liveId/metrics')
+  async getLiveMetrics(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.getLiveMetrics(parsedParams.data.liveId);
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return liveMetricsSchema.parse(result.metrics);
   }
 
   @Get('api/v1/admin/lives/:liveId/products')
@@ -741,6 +765,22 @@ export class LiveController {
     }
 
     return orderSchema.parse(result.order);
+  }
+
+  @Get('api/v1/admin/orders')
+  async listAdminOrders(@Query() query: unknown, @Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedQuery = adminOrdersQuerySchema.safeParse(query);
+    if (!parsedQuery.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '주문 목록 조회 조건이 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.listAdminOrders(parsedQuery.data);
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return adminOrderPageSchema.parse(result.page);
   }
 
   @Get('api/v1/admin/lives/:liveId/orders')
