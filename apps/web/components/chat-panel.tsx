@@ -70,10 +70,14 @@ export function ChatPanel({
   const timeoutAt = chatTimeoutExpiresAt ? Date.parse(chatTimeoutExpiresAt) : Number.NaN;
   const isChatTimedOut = Number.isFinite(timeoutAt) && timeoutAt > now;
   const isChatAvailable = liveStatus === 'LIVE';
-  const unavailableChatMessage =
-    liveStatus === 'READY'
-      ? '방송이 시작되면 채팅에 참여할 수 있습니다.'
-      : '방송이 종료되어 새 채팅을 보낼 수 없습니다.';
+  const unavailableChatMessages: Record<Exclude<LiveStatus, 'LIVE'>, string> = {
+    DRAFT: '방송 정보가 준비되면 채팅에 참여할 수 있습니다.',
+    SCHEDULED: '방송이 시작되면 채팅에 참여할 수 있습니다.',
+    READY: '방송이 시작되면 채팅에 참여할 수 있습니다.',
+    ENDED: '방송이 종료되어 새 채팅을 보낼 수 없습니다.',
+    CANCELLED: '취소된 방송에서는 채팅을 보낼 수 없습니다.',
+  };
+  const unavailableChatMessage = liveStatus === 'LIVE' ? null : unavailableChatMessages[liveStatus];
 
   useEffect(() => {
     if (!Number.isFinite(timeoutAt) || timeoutAt <= Date.now()) {
@@ -214,7 +218,7 @@ export function ChatPanel({
           onKeyDown={handleKeyDown}
           placeholder={
             !isChatAvailable
-              ? unavailableChatMessage
+              ? (unavailableChatMessage ?? '채팅을 보낼 수 없습니다.')
               : isChatTimedOut
                 ? '채팅 제한이 적용되어 있습니다'
                 : accessToken
@@ -230,7 +234,7 @@ export function ChatPanel({
               (isChatTimedOut
                 ? `채팅 제한됨 · ${timeoutTimeFormatter.format(new Date(timeoutAt))}까지`
                 : !isChatAvailable
-                  ? unavailableChatMessage
+                  ? (unavailableChatMessage ?? '채팅을 보낼 수 없습니다.')
                   : sendMutation.isError
                     ? sendMutation.error instanceof ApiRequestError
                       ? sendMutation.error.message

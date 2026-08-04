@@ -227,9 +227,7 @@ export function AdminProductControl({
 
 type AdminBroadcastControlProps = {
   error: string | null;
-  isCreatingNextSession: boolean;
   isPending: boolean;
-  onCreateNextSession: () => void;
   onEnd: () => void;
   onStart: () => void;
   status: LiveSnapshot['live']['status'];
@@ -237,9 +235,7 @@ type AdminBroadcastControlProps = {
 
 export function AdminBroadcastControl({
   error,
-  isCreatingNextSession,
   isPending,
-  onCreateNextSession,
   onEnd,
   onStart,
   status,
@@ -275,14 +271,9 @@ export function AdminBroadcastControl({
           {isPending ? '방송 종료 중…' : '방송 종료'}
         </button>
       ) : (
-        <button
-          className="broadcast-control-next"
-          disabled={isCreatingNextSession}
-          onClick={onCreateNextSession}
-          type="button"
-        >
-          {isCreatingNextSession ? '새 방송 준비 중…' : '새 방송 만들기'}
-        </button>
+        <Link className="broadcast-control-next" href="/admin/lives/new">
+          새 방송 만들기
+        </Link>
       )}
     </section>
   );

@@ -16,9 +16,12 @@ enum Role {
 }
 
 enum LiveStatus {
+  DRAFT
+  SCHEDULED
   READY
   LIVE
   ENDED
+  CANCELLED
 }
 
 enum ChatMessageType {
@@ -71,6 +74,7 @@ model User {
   orders            Order[]
   reviewedAiSuggestions AiSuggestion[] @relation("AiSuggestionReviewer")
   announcements     Announcement[] @relation("AnnouncementCreator")
+  createdLives      LiveSession[]  @relation("LiveSessionCreator")
 
   @@map("users")
 }
@@ -78,11 +82,17 @@ model User {
 model LiveSession {
   id                String          @id @default(cuid())
   title             String
-  status            LiveStatus      @default(READY)
+  description       String?
+  thumbnailUrl      String?         @map("thumbnail_url")
+  scheduledStartAt  DateTime?       @map("scheduled_start_at")
+  status            LiveStatus      @default(DRAFT)
+  createdById       String?         @map("created_by_user_id")
+  createdBy         User?           @relation("LiveSessionCreator", fields: [createdById], references: [id], onDelete: Restrict)
   featuredProductId String?         @map("featured_product_id")
   featuredProduct   Product?        @relation("FeaturedProduct", fields: [featuredProductId], references: [id], onDelete: SetNull)
   startedAt         DateTime?       @map("started_at")
   endedAt           DateTime?       @map("ended_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
   nextEventSequence Int             @default(1) @map("next_event_sequence")
   realtimeEvents    RealtimeEvent[]
   auditLogs         AuditLog[]
@@ -92,7 +102,10 @@ model LiveSession {
   orders            Order[]
   aiSuggestions     AiSuggestion[]
   announcements     Announcement[]
+  liveProducts      LiveProduct[]
 
+  @@index([status, scheduledStartAt])
+  @@index([createdById, createdAt])
   @@map("live_sessions")
 }
 
@@ -179,8 +192,23 @@ model Product {
   priceKrw        Int           @map("price_krw")
   variants        ProductVariant[]
   featuredInLives LiveSession[] @relation("FeaturedProduct")
+  liveProducts    LiveProduct[]
 
   @@map("products")
+}
+
+model LiveProduct {
+  liveId       String      @map("live_id")
+  productId    String      @map("product_id")
+  displayOrder Int         @map("display_order")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  live         LiveSession @relation(fields: [liveId], references: [id], onDelete: Cascade)
+  product      Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([liveId, productId])
+  @@unique([liveId, displayOrder])
+  @@index([productId])
+  @@map("live_products")
 }
 
 model ProductVariant {

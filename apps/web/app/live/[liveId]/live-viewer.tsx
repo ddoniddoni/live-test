@@ -1,10 +1,10 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Announcement, Coupon, Product } from '@liveflow/contracts';
+import type { Announcement, Coupon, LiveStatus, Product } from '@liveflow/contracts';
 
 import { ChatPanel } from '@/components/chat-panel';
 import { MockLivePlayback } from '@/components/mock-live-playback';
@@ -143,7 +143,7 @@ function MobileProductCard({
   accessToken: string | null;
   activeCoupon: Coupon | null;
   liveId: string;
-  liveStatus: 'READY' | 'LIVE' | 'ENDED';
+  liveStatus: LiveStatus;
   onAskProduct: () => void;
   product: Product;
 }) {
@@ -196,7 +196,7 @@ export function LiveViewer({ liveId }: { liveId: string }) {
     queryFn: () => fetchChatAccess(liveId, accessToken ?? ''),
     enabled: accessToken !== null && isLive,
   });
-  const connectionState = useLiveRealtime(liveId, accessToken);
+  const { connectionState, retry: retryRealtimeConnection } = useLiveRealtime(liveId, accessToken);
 
   useEffect(() => {
     let isActive = true;
@@ -236,8 +236,41 @@ export function LiveViewer({ liveId }: { liveId: string }) {
 
   const { activeCoupon, featuredProduct, latestAnnouncement, live } = snapshotQuery.data;
   const isChatLive = live.status === 'LIVE';
-  const liveStatusLabel =
-    live.status === 'LIVE' ? 'LIVE' : live.status === 'READY' ? 'COMING SOON' : 'ENDED';
+  const liveStatusLabels: Record<LiveStatus, string> = {
+    DRAFT: 'DRAFT',
+    SCHEDULED: 'SCHEDULED',
+    READY: 'COMING SOON',
+    LIVE: 'LIVE',
+    ENDED: 'ENDED',
+    CANCELLED: 'CANCELLED',
+  };
+  const liveStatusLabel = liveStatusLabels[live.status];
+  const chatStandbyMessages: Record<
+    Exclude<LiveStatus, 'LIVE'>,
+    { heading: string; body: string }
+  > = {
+    DRAFT: {
+      heading: '방송 정보를 준비하고 있습니다',
+      body: '방송이 공개되면 실시간 채팅과 AI 상품 질문을 이용할 수 있습니다.',
+    },
+    SCHEDULED: {
+      heading: '라이브 시작 대기 중',
+      body: '예정된 방송이 시작되면 실시간 채팅과 AI 상품 질문이 열립니다.',
+    },
+    READY: {
+      heading: '라이브 시작 대기 중',
+      body: '방송이 시작되면 실시간 채팅과 AI 상품 질문이 열립니다.',
+    },
+    ENDED: {
+      heading: '라이브가 종료되었습니다',
+      body: '이 방송의 실시간 채팅은 종료되었습니다.',
+    },
+    CANCELLED: {
+      heading: '방송이 취소되었습니다',
+      body: '다른 라이브 방송에서 다시 만나요.',
+    },
+  };
+  const chatStandbyMessage = live.status === 'LIVE' ? null : chatStandbyMessages[live.status];
 
   return (
     <main className="live-shell viewer-shell">
@@ -259,10 +292,16 @@ export function LiveViewer({ liveId }: { liveId: string }) {
             <span aria-hidden="true" />
             {liveStatusLabel}
           </span>
-          <span className={`connection-pill connection-${connectionState.toLowerCase()}`}>
-            <span aria-hidden="true" />
-            {connectionLabel(connectionState)}
-          </span>
+          {connectionState === 'DISCONNECTED' || connectionState === 'FAILED' ? (
+            <button className="connection-retry" onClick={retryRealtimeConnection} type="button">
+              다시 연결
+            </button>
+          ) : (
+            <span className={`connection-pill connection-${connectionState.toLowerCase()}`}>
+              <span aria-hidden="true" />
+              {connectionLabel(connectionState)}
+            </span>
+          )}
           <Link className="text-link" href={`/admin/lives/${liveId}`}>
             운영자 화면
           </Link>
@@ -419,11 +458,9 @@ export function LiveViewer({ liveId }: { liveId: string }) {
           ) : (
             <section className="viewer-chat-standby" role="status">
               <span aria-hidden="true">◌</span>
-              <h2>{live.status === 'READY' ? '라이브 시작 대기 중' : '라이브가 종료되었습니다'}</h2>
+              <h2>{chatStandbyMessage?.heading ?? '라이브 시작 대기 중'}</h2>
               <p>
-                {live.status === 'READY'
-                  ? '방송이 시작되면 실시간 채팅과 AI 상품 질문이 열립니다.'
-                  : '이 방송의 실시간 채팅은 종료되었습니다.'}
+                {chatStandbyMessage?.body ?? '방송이 시작되면 실시간 채팅에 참여할 수 있습니다.'}
               </p>
             </section>
           )}

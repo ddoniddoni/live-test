@@ -2,7 +2,6 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   InventoryLowEvent,
@@ -20,7 +19,6 @@ import {
   ApiRequestError,
   aiSuggestionsQueryKey,
   createAiChatSummary,
-  createNextLiveSession,
   endLive,
   featureProduct,
   fetchAiSuggestions,
@@ -42,7 +40,7 @@ import {
   startLive,
   timeoutChatUser,
 } from '@/lib/live-api';
-import { useLiveRealtime } from '@/lib/use-live-realtime';
+import { useLiveRealtime, type ConnectionState } from '@/lib/use-live-realtime';
 import { stitchAssets } from '@/lib/stitch-assets';
 
 import {
@@ -52,8 +50,8 @@ import {
   AdminSidebar,
 } from './admin-room-sections';
 
-function connectionLabel(connectionState: ReturnType<typeof useLiveRealtime>): string {
-  const labels: Record<ReturnType<typeof useLiveRealtime>, string> = {
+function connectionLabel(connectionState: ConnectionState): string {
+  const labels: Record<ConnectionState, string> = {
     CONNECTING: '실시간 서버 연결 중',
     CONNECTED: '실시간 연결됨',
     RECOVERING: '변경 사항 동기화 중',
@@ -66,7 +64,7 @@ function connectionLabel(connectionState: ReturnType<typeof useLiveRealtime>): s
 
 export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken: string }) {
   const queryClient = useQueryClient();
-  const [activeLiveId, setActiveLiveId] = useState(liveId);
+  const activeLiveId = liveId;
   const snapshotQuery = useQuery({
     queryKey: liveSnapshotQueryKey(activeLiveId),
     queryFn: () => fetchLiveSnapshot(activeLiveId),
@@ -85,7 +83,10 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
     enabled: false,
     initialData: [] as InventoryLowEvent[],
   });
-  const connectionState = useLiveRealtime(activeLiveId, accessToken);
+  const { connectionState, retry: retryRealtimeConnection } = useLiveRealtime(
+    activeLiveId,
+    accessToken,
+  );
 
   const featureMutation = useMutation({
     mutationFn: (productId: string | null) => featureProduct(activeLiveId, productId, accessToken),
@@ -104,13 +105,6 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
       queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeLiveStatusChangedEvent(snapshot, event),
       );
-    },
-  });
-  const nextSessionMutation = useMutation({
-    mutationFn: () => createNextLiveSession(activeLiveId, accessToken),
-    onSuccess: (nextLive) => {
-      window.history.replaceState(null, '', `/admin/lives/${nextLive.id}`);
-      setActiveLiveId(nextLive.id);
     },
   });
   const hideMessageMutation = useMutation({
@@ -241,9 +235,22 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
             {snapshot.live.status === 'LIVE' ? 'LIVE' : snapshot.live.status}
           </span>
           <span className="admin-live-duration">01:42:15</span>
-          <span className={`admin-connection-status is-${connectionState.toLowerCase()}`}>
-            {connectionLabel(connectionState)}
-          </span>
+          {connectionState === 'DISCONNECTED' || connectionState === 'FAILED' ? (
+            <button
+              className="admin-connection-retry"
+              onClick={retryRealtimeConnection}
+              type="button"
+            >
+              실시간 연결 다시 시도
+            </button>
+          ) : (
+            <span className={`admin-connection-status is-${connectionState.toLowerCase()}`}>
+              {connectionLabel(connectionState)}
+            </span>
+          )}
+          <Link className="admin-home-link" href="/admin/lives">
+            방송 목록
+          </Link>
           <Link className="admin-home-link" href="/">
             홈으로
           </Link>
@@ -297,15 +304,9 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
                     ? broadcastMutation.error instanceof Error
                       ? broadcastMutation.error.message
                       : '방송 상태를 변경하지 못했습니다. 다시 시도해 주세요.'
-                    : nextSessionMutation.isError
-                      ? nextSessionMutation.error instanceof Error
-                        ? nextSessionMutation.error.message
-                        : '새 방송을 만들지 못했습니다. 다시 시도해 주세요.'
-                      : null
+                    : null
                 }
-                isCreatingNextSession={nextSessionMutation.isPending}
                 isPending={broadcastMutation.isPending}
-                onCreateNextSession={() => nextSessionMutation.mutate()}
                 onEnd={() => broadcastMutation.mutate('END')}
                 onStart={() => broadcastMutation.mutate('START')}
                 status={snapshot.live.status}

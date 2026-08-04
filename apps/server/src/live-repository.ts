@@ -1,5 +1,8 @@
 import { LOW_STOCK_THRESHOLD, aiChatSummarySchema } from '@liveflow/contracts';
 import type {
+  AdminLiveList,
+  AdminLiveListQuery,
+  AdminLiveSession,
   AdminOrder,
   AiChatSummary,
   AiSuggestion,
@@ -19,9 +22,11 @@ import type {
   Coupon,
   CouponPublishedEvent,
   CouponRedeemedEvent,
+  CreateLiveDraftRequest,
   InventoryUpdatedEvent,
   InventoryLowEvent,
   LiveStatusChangedEvent,
+  LiveProduct,
   LiveSnapshot,
   LiveStatusTransitionAction,
   Order,
@@ -30,7 +35,9 @@ import type {
   OrdersQuery,
   Product,
   ProductFeaturedEvent,
+  ReplaceLiveProductsRequest,
   ReviewAiSuggestionRequest,
+  UpdateLiveDraftRequest,
 } from '@liveflow/contracts';
 import { prisma } from '@liveflow/database';
 
@@ -46,6 +53,12 @@ type ProductRecord = {
     name: string;
     stock: number;
   }>;
+};
+
+type LiveProductRecord = {
+  liveId: string;
+  displayOrder: number;
+  product: ProductRecord;
 };
 
 type CouponRecord = {
@@ -156,6 +169,37 @@ export type FeatureProductResult =
     }
   | {
       kind: 'product_not_found';
+    }
+  | {
+      kind: 'product_not_available';
+    };
+
+export type GetLiveProductsResult =
+  | {
+      kind: 'found';
+      products: LiveProduct[];
+    }
+  | {
+      kind: 'live_not_found';
+    };
+
+export type ReplaceLiveProductsResult =
+  | {
+      kind: 'updated';
+      products: LiveProduct[];
+      featuredProductEvent: ProductFeaturedEvent | null;
+    }
+  | {
+      kind: 'live_not_found';
+    }
+  | {
+      kind: 'live_not_editable';
+    }
+  | {
+      kind: 'products_not_found';
+    }
+  | {
+      kind: 'product_not_sellable';
     };
 
 export type ChangeLiveStatusResult =
@@ -168,6 +212,12 @@ export type ChangeLiveStatusResult =
     }
   | {
       kind: 'invalid_status_transition';
+    }
+  | {
+      kind: 'schedule_requirements_not_met';
+    }
+  | {
+      kind: 'preparation_requirements_not_met';
     };
 
 export type CreateNextLiveSessionResult =
@@ -180,6 +230,30 @@ export type CreateNextLiveSessionResult =
     }
   | {
       kind: 'source_live_not_ended';
+    };
+
+export type UpdateLiveDraftResult =
+  | {
+      kind: 'updated';
+      live: AdminLiveSession;
+    }
+  | {
+      kind: 'live_not_found';
+    }
+  | {
+      kind: 'live_not_editable';
+    };
+
+export type CancelLiveDraftResult =
+  | {
+      kind: 'cancelled';
+      live: AdminLiveSession;
+    }
+  | {
+      kind: 'live_not_found';
+    }
+  | {
+      kind: 'live_not_cancellable';
     };
 
 export type PublishCouponResult =
@@ -254,6 +328,15 @@ export type CreateOrderResult =
     }
   | {
       kind: 'out_of_stock';
+    };
+
+export type GetViewerOrderResult =
+  | {
+      kind: 'found';
+      order: Order;
+    }
+  | {
+      kind: 'order_not_found';
     };
 
 export type HideChatMessageResult =
@@ -350,6 +433,25 @@ export type ReviewAiSuggestionResult =
     };
 
 export interface LiveRepository {
+  listAdminLives(query: AdminLiveListQuery): Promise<AdminLiveList>;
+  getAdminLive(liveId: string): Promise<AdminLiveSession | null>;
+  listCatalogProducts(): Promise<Product[]>;
+  getLiveProducts(liveId: string): Promise<GetLiveProductsResult>;
+  replaceLiveProducts(input: {
+    actorId: string;
+    liveId: string;
+    productIds: ReplaceLiveProductsRequest['productIds'];
+  }): Promise<ReplaceLiveProductsResult>;
+  createLiveDraft(input: {
+    actorId: string;
+    draft: CreateLiveDraftRequest;
+  }): Promise<AdminLiveSession>;
+  updateLiveDraft(input: {
+    actorId: string;
+    draft: UpdateLiveDraftRequest;
+    liveId: string;
+  }): Promise<UpdateLiveDraftResult>;
+  cancelLiveDraft(input: { actorId: string; liveId: string }): Promise<CancelLiveDraftResult>;
   getSnapshot(liveId: string): Promise<LiveSnapshot | null>;
   getMessages(liveId: string, query: ChatMessagesQuery): Promise<ChatMessagePage | null>;
   getChatAccess(liveId: string, userId: string): Promise<GetChatAccessResult>;
@@ -367,6 +469,7 @@ export interface LiveRepository {
     quantity: number;
     idempotencyKey: string;
   }): Promise<CreateOrderResult>;
+  getViewerOrder(input: { orderId: string; userId: string }): Promise<GetViewerOrderResult>;
   getRecentOrders(liveId: string, query: OrdersQuery): Promise<GetOrdersResult>;
   hideMessage(input: {
     liveId: string;
@@ -441,6 +544,14 @@ function toProductDto(product: ProductRecord): Product {
   };
 }
 
+function toLiveProductDto(liveProduct: LiveProductRecord): LiveProduct {
+  return {
+    liveId: liveProduct.liveId,
+    displayOrder: liveProduct.displayOrder,
+    product: toProductDto(liveProduct.product),
+  };
+}
+
 function toLiveSessionDto(live: {
   id: string;
   title: string;
@@ -454,6 +565,26 @@ function toLiveSessionDto(live: {
     status: live.status,
     startedAt: live.startedAt?.toISOString() ?? null,
     endedAt: live.endedAt?.toISOString() ?? null,
+  };
+}
+
+function toAdminLiveSessionDto(live: {
+  id: string;
+  title: string;
+  description: string | null;
+  thumbnailUrl: string | null;
+  scheduledStartAt: Date | null;
+  status: AdminLiveSession['status'];
+  startedAt: Date | null;
+  endedAt: Date | null;
+  createdAt: Date;
+}): AdminLiveSession {
+  return {
+    ...toLiveSessionDto(live),
+    description: live.description,
+    thumbnailUrl: live.thumbnailUrl,
+    scheduledStartAt: live.scheduledStartAt?.toISOString() ?? null,
+    createdAt: live.createdAt.toISOString(),
   };
 }
 
@@ -595,6 +726,48 @@ function toSnapshot(
   };
 }
 
+function isPublicLiveStatus(status: LiveSnapshot['live']['status']): boolean {
+  return status !== 'DRAFT' && status !== 'CANCELLED';
+}
+
+function getStatusTransition(action: LiveStatusTransitionAction): {
+  expectedStatus: LiveSnapshot['live']['status'];
+  nextStatus: LiveSnapshot['live']['status'];
+  auditAction: string;
+} {
+  const transitions: Record<
+    LiveStatusTransitionAction,
+    {
+      expectedStatus: LiveSnapshot['live']['status'];
+      nextStatus: LiveSnapshot['live']['status'];
+      auditAction: string;
+    }
+  > = {
+    SCHEDULE: {
+      expectedStatus: 'DRAFT',
+      nextStatus: 'SCHEDULED',
+      auditAction: 'LIVE_SCHEDULED',
+    },
+    PREPARE: {
+      expectedStatus: 'SCHEDULED',
+      nextStatus: 'READY',
+      auditAction: 'LIVE_PREPARED',
+    },
+    START: {
+      expectedStatus: 'READY',
+      nextStatus: 'LIVE',
+      auditAction: 'LIVE_STARTED',
+    },
+    END: {
+      expectedStatus: 'LIVE',
+      nextStatus: 'ENDED',
+      auditAction: 'LIVE_ENDED',
+    },
+  };
+
+  return transitions[action];
+}
+
 function isUniqueConstraintError(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -642,13 +815,74 @@ const adminOrderRecordInclude = {
 } as const;
 
 export const prismaLiveRepository: LiveRepository = {
-  async getSnapshot(liveId) {
-    const now = new Date();
-    const [live, products, chatRoom, activeCoupon, latestAnnouncement] = await Promise.all([
+  async listAdminLives(query) {
+    const rows = await prisma.liveSession.findMany({
+      ...(query.status ? { where: { status: query.status } } : {}),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      take: query.limit + 1,
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        thumbnailUrl: true,
+        scheduledStartAt: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        createdAt: true,
+      },
+    });
+    const lives = rows.slice(0, query.limit);
+
+    return {
+      lives: lives.map(toAdminLiveSessionDto),
+      nextCursor: rows.length > query.limit ? (lives[lives.length - 1]?.id ?? null) : null,
+    };
+  },
+
+  async getAdminLive(liveId) {
+    const live = await prisma.liveSession.findUnique({
+      where: { id: liveId },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        thumbnailUrl: true,
+        scheduledStartAt: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        createdAt: true,
+      },
+    });
+
+    return live ? toAdminLiveSessionDto(live) : null;
+  },
+
+  async listCatalogProducts() {
+    const products = await prisma.product.findMany({
+      include: {
+        variants: {
+          orderBy: { name: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return products.map(toProductDto);
+  },
+
+  async getLiveProducts(liveId) {
+    const [live, liveProducts] = await Promise.all([
       prisma.liveSession.findUnique({
         where: { id: liveId },
+        select: { id: true },
+      }),
+      prisma.liveProduct.findMany({
+        where: { liveId },
         include: {
-          featuredProduct: {
+          product: {
             include: {
               variants: {
                 orderBy: { name: 'asc' },
@@ -656,14 +890,330 @@ export const prismaLiveRepository: LiveRepository = {
             },
           },
         },
+        orderBy: { displayOrder: 'asc' },
       }),
-      prisma.product.findMany({
+    ]);
+
+    if (!live) {
+      return { kind: 'live_not_found' } as const;
+    }
+
+    return {
+      kind: 'found',
+      products: liveProducts.map(toLiveProductDto),
+    } as const;
+  },
+
+  async replaceLiveProducts({ actorId, liveId, productIds }) {
+    return prisma.$transaction(async (transaction) => {
+      const live = await transaction.liveSession.findUnique({
+        where: { id: liveId },
+        select: {
+          featuredProductId: true,
+          status: true,
+        },
+      });
+
+      if (!live) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      if (live.status !== 'DRAFT' && live.status !== 'SCHEDULED') {
+        return { kind: 'live_not_editable' } as const;
+      }
+
+      const catalogProducts = await transaction.product.findMany({
+        where: { id: { in: productIds } },
         include: {
           variants: {
             orderBy: { name: 'asc' },
           },
         },
-        orderBy: { name: 'asc' },
+      });
+      if (catalogProducts.length !== productIds.length) {
+        return { kind: 'products_not_found' } as const;
+      }
+
+      const productById = new Map(catalogProducts.map((product) => [product.id, product]));
+      const orderedProducts: ProductRecord[] = [];
+      for (const productId of productIds) {
+        const product = productById.get(productId);
+        if (!product) {
+          throw new Error('Catalog product disappeared while preparing a broadcast.');
+        }
+
+        if (!product.variants.some((variant) => variant.stock > 0)) {
+          return { kind: 'product_not_sellable' } as const;
+        }
+
+        orderedProducts.push(product);
+      }
+
+      const nextFeaturedProductId = productIds.includes(live.featuredProductId ?? '')
+        ? live.featuredProductId
+        : (productIds[0] ?? null);
+      const featuredProductChanged = nextFeaturedProductId !== live.featuredProductId;
+
+      await transaction.liveProduct.deleteMany({ where: { liveId } });
+      await transaction.liveProduct.createMany({
+        data: productIds.map((productId, displayOrder) => ({
+          liveId,
+          productId,
+          displayOrder,
+        })),
+      });
+
+      let featuredProductEvent: ProductFeaturedEvent | null = null;
+      if (featuredProductChanged) {
+        const updatedLive = await transaction.liveSession.update({
+          where: { id: liveId },
+          data: {
+            featuredProductId: nextFeaturedProductId,
+            nextEventSequence: { increment: 1 },
+          },
+          select: { nextEventSequence: true },
+        });
+        const featuredProduct = orderedProducts.find(
+          (product) => product.id === nextFeaturedProductId,
+        );
+        if (!featuredProduct) {
+          throw new Error('Featured product disappeared while preparing a broadcast.');
+        }
+
+        const occurredAt = new Date();
+        const realtimeEvent = await transaction.realtimeEvent.create({
+          data: {
+            liveId,
+            sequence: updatedLive.nextEventSequence - 1,
+            type: 'product.featured',
+            payloadJson: { product: toProductDto(featuredProduct) },
+            occurredAt,
+          },
+        });
+
+        featuredProductEvent = {
+          eventId: realtimeEvent.id,
+          liveId,
+          sequence: realtimeEvent.sequence,
+          type: 'product.featured',
+          occurredAt: realtimeEvent.occurredAt.toISOString(),
+          payload: { product: toProductDto(featuredProduct) },
+        };
+      }
+
+      await transaction.auditLog.create({
+        data: {
+          liveId,
+          actorId,
+          action: 'LIVE_PRODUCTS_UPDATED',
+          entityType: 'LIVE_SESSION',
+          entityId: liveId,
+          beforeJson: { featuredProductId: live.featuredProductId },
+          afterJson: {
+            featuredProductId: nextFeaturedProductId,
+            productIds,
+          },
+        },
+      });
+
+      return {
+        kind: 'updated',
+        products: orderedProducts.map((product, displayOrder) =>
+          toLiveProductDto({ liveId, displayOrder, product }),
+        ),
+        featuredProductEvent,
+      } as const;
+    });
+  },
+
+  async createLiveDraft({ actorId, draft }) {
+    const scheduledStartAt = new Date(draft.scheduledStartAt);
+    const live = await prisma.liveSession.create({
+      data: {
+        title: draft.title,
+        description: draft.description,
+        thumbnailUrl: draft.thumbnailUrl ?? null,
+        scheduledStartAt,
+        status: 'DRAFT',
+        createdById: actorId,
+        chatRoom: { create: {} },
+        auditLogs: {
+          create: {
+            actorId,
+            action: 'LIVE_DRAFT_CREATED',
+            entityType: 'LIVE_SESSION',
+            afterJson: {
+              status: 'DRAFT',
+              title: draft.title,
+              scheduledStartAt: draft.scheduledStartAt,
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        thumbnailUrl: true,
+        scheduledStartAt: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        createdAt: true,
+      },
+    });
+
+    return toAdminLiveSessionDto(live);
+  },
+
+  async updateLiveDraft({ actorId, draft, liveId }) {
+    return prisma.$transaction(async (transaction) => {
+      const existingLive = await transaction.liveSession.findUnique({
+        where: { id: liveId },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          thumbnailUrl: true,
+          scheduledStartAt: true,
+          status: true,
+        },
+      });
+
+      if (!existingLive) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      if (existingLive.status !== 'DRAFT' && existingLive.status !== 'SCHEDULED') {
+        return { kind: 'live_not_editable' } as const;
+      }
+
+      const live = await transaction.liveSession.update({
+        where: { id: liveId },
+        data: {
+          title: draft.title,
+          description: draft.description,
+          thumbnailUrl: draft.thumbnailUrl ?? null,
+          scheduledStartAt: new Date(draft.scheduledStartAt),
+          auditLogs: {
+            create: {
+              actorId,
+              action: 'LIVE_DRAFT_UPDATED',
+              entityType: 'LIVE_SESSION',
+              beforeJson: {
+                title: existingLive.title,
+                description: existingLive.description,
+                thumbnailUrl: existingLive.thumbnailUrl,
+                scheduledStartAt: existingLive.scheduledStartAt?.toISOString() ?? null,
+              },
+              afterJson: {
+                title: draft.title,
+                description: draft.description,
+                thumbnailUrl: draft.thumbnailUrl ?? null,
+                scheduledStartAt: draft.scheduledStartAt,
+              },
+            },
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          thumbnailUrl: true,
+          scheduledStartAt: true,
+          status: true,
+          startedAt: true,
+          endedAt: true,
+          createdAt: true,
+        },
+      });
+
+      return { kind: 'updated', live: toAdminLiveSessionDto(live) } as const;
+    });
+  },
+
+  async cancelLiveDraft({ actorId, liveId }) {
+    return prisma.$transaction(async (transaction) => {
+      const existingLive = await transaction.liveSession.findUnique({
+        where: { id: liveId },
+        select: { id: true, status: true, title: true },
+      });
+
+      if (!existingLive) {
+        return { kind: 'live_not_found' } as const;
+      }
+
+      if (
+        existingLive.status !== 'DRAFT' &&
+        existingLive.status !== 'SCHEDULED' &&
+        existingLive.status !== 'READY'
+      ) {
+        return { kind: 'live_not_cancellable' } as const;
+      }
+
+      const live = await transaction.liveSession.update({
+        where: { id: liveId },
+        data: {
+          status: 'CANCELLED',
+          auditLogs: {
+            create: {
+              actorId,
+              action: 'LIVE_DRAFT_CANCELLED',
+              entityType: 'LIVE_SESSION',
+              beforeJson: { status: existingLive.status },
+              afterJson: { status: 'CANCELLED', title: existingLive.title },
+            },
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          thumbnailUrl: true,
+          scheduledStartAt: true,
+          status: true,
+          startedAt: true,
+          endedAt: true,
+          createdAt: true,
+        },
+      });
+
+      return { kind: 'cancelled', live: toAdminLiveSessionDto(live) } as const;
+    });
+  },
+
+  async getSnapshot(liveId) {
+    const now = new Date();
+    const live = await prisma.liveSession.findUnique({
+      where: { id: liveId },
+      include: {
+        featuredProduct: {
+          include: {
+            variants: {
+              orderBy: { name: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    if (!live || !isPublicLiveStatus(live.status)) {
+      return null;
+    }
+
+    const [liveProducts, chatRoom, activeCoupon, latestAnnouncement] = await Promise.all([
+      prisma.liveProduct.findMany({
+        where: { liveId },
+        include: {
+          product: {
+            include: {
+              variants: {
+                orderBy: { name: 'asc' },
+              },
+            },
+          },
+        },
+        orderBy: { displayOrder: 'asc' },
       }),
       prisma.chatRoom.findUnique({
         where: { liveId },
@@ -692,10 +1242,25 @@ export const prismaLiveRepository: LiveRepository = {
       }),
     ]);
 
-    return live ? toSnapshot(live, products, chatRoom, activeCoupon, latestAnnouncement) : null;
+    return toSnapshot(
+      live,
+      liveProducts.map((liveProduct) => liveProduct.product),
+      chatRoom,
+      activeCoupon,
+      latestAnnouncement,
+    );
   },
 
   async getMessages(liveId, query) {
+    const live = await prisma.liveSession.findUnique({
+      where: { id: liveId },
+      select: { id: true, status: true },
+    });
+
+    if (!live || !isPublicLiveStatus(live.status)) {
+      return null;
+    }
+
     const chatRoom = await prisma.chatRoom.findUnique({
       where: { liveId },
       select: {
@@ -705,12 +1270,7 @@ export const prismaLiveRepository: LiveRepository = {
     });
 
     if (!chatRoom) {
-      const live = await prisma.liveSession.findUnique({
-        where: { id: liveId },
-        select: { id: true },
-      });
-
-      return live ? toChatPage(null, liveId) : null;
+      return toChatPage(null, liveId);
     }
 
     const take = query.limit + 1;
@@ -748,10 +1308,10 @@ export const prismaLiveRepository: LiveRepository = {
   async getChatAccess(liveId, userId) {
     const live = await prisma.liveSession.findUnique({
       where: { id: liveId },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
-    if (!live) {
+    if (!live || !isPublicLiveStatus(live.status)) {
       return { kind: 'live_not_found' } as const;
     }
 
@@ -979,6 +1539,20 @@ export const prismaLiveRepository: LiveRepository = {
 
         if (!variant) {
           return { kind: 'product_not_found' } as const;
+        }
+
+        const liveProduct = await transaction.liveProduct.findUnique({
+          where: {
+            liveId_productId: {
+              liveId,
+              productId: variant.productId,
+            },
+          },
+          select: { productId: true },
+        });
+
+        if (!liveProduct) {
+          return { kind: 'product_not_available' } as const;
         }
 
         if (live.featuredProductId !== variant.productId) {
@@ -1265,6 +1839,19 @@ export const prismaLiveRepository: LiveRepository = {
 
       return { kind: 'idempotent', order: toOrderDto(persistedOrder) } as const;
     }
+  },
+
+  async getViewerOrder({ orderId, userId }) {
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, userId },
+      include: orderRecordInclude,
+    });
+
+    if (!order) {
+      return { kind: 'order_not_found' } as const;
+    }
+
+    return { kind: 'found', order: toOrderDto(order) } as const;
   },
 
   async getRecentOrders(liveId, query) {
@@ -1655,6 +2242,22 @@ export const prismaLiveRepository: LiveRepository = {
         return { kind: 'product_not_found' } as const;
       }
 
+      if (productId) {
+        const liveProduct = await transaction.liveProduct.findUnique({
+          where: {
+            liveId_productId: {
+              liveId,
+              productId,
+            },
+          },
+          select: { productId: true },
+        });
+
+        if (!liveProduct) {
+          return { kind: 'product_not_available' } as const;
+        }
+      }
+
       const updatedLive = await transaction.liveSession.update({
         where: { id: liveId },
         data: {
@@ -1726,7 +2329,9 @@ export const prismaLiveRepository: LiveRepository = {
       const nextLive = await transaction.liveSession.create({
         data: {
           chatRoom: { create: {} },
+          createdById: actorId,
           featuredProductId: sourceLive.featuredProductId,
+          status: 'READY',
           title: sourceLive.title,
         },
         select: {
@@ -1759,38 +2364,70 @@ export const prismaLiveRepository: LiveRepository = {
   },
 
   async changeLiveStatus({ liveId, actorId, action }) {
-    const expectedStatus = action === 'START' ? 'READY' : 'LIVE';
-    const nextStatus = action === 'START' ? 'LIVE' : 'ENDED';
+    const transition = getStatusTransition(action);
     const occurredAt = new Date();
 
     return prisma.$transaction(async (transaction) => {
       const liveBefore = await transaction.liveSession.findUnique({
         where: { id: liveId },
-        select: { id: true, status: true, startedAt: true, endedAt: true },
+        select: {
+          id: true,
+          status: true,
+          scheduledStartAt: true,
+          startedAt: true,
+          endedAt: true,
+        },
       });
 
       if (!liveBefore) {
         return { kind: 'live_not_found' } as const;
       }
 
-      if (liveBefore.status !== expectedStatus) {
+      if (liveBefore.status !== transition.expectedStatus) {
         return { kind: 'invalid_status_transition' } as const;
       }
 
-      const statusUpdate = await transaction.liveSession.updateMany({
-        where: { id: liveId, status: expectedStatus },
-        data:
-          action === 'START'
-            ? {
-                status: nextStatus,
-                startedAt: occurredAt,
-                nextEventSequence: { increment: 1 },
-              }
-            : {
-                status: nextStatus,
-                endedAt: occurredAt,
-                nextEventSequence: { increment: 1 },
+      if (action === 'SCHEDULE') {
+        const liveProductCount = await transaction.liveProduct.count({ where: { liveId } });
+        if (
+          !liveBefore.scheduledStartAt ||
+          liveBefore.scheduledStartAt.getTime() <= occurredAt.getTime() ||
+          liveProductCount === 0
+        ) {
+          return { kind: 'schedule_requirements_not_met' } as const;
+        }
+      }
+
+      if (action === 'PREPARE' || action === 'START') {
+        const liveProducts = await transaction.liveProduct.findMany({
+          where: { liveId },
+          include: {
+            product: {
+              select: {
+                variants: {
+                  select: { stock: true },
+                },
               },
+            },
+          },
+        });
+        const hasUnsellableProduct = liveProducts.some(
+          (liveProduct) => !liveProduct.product.variants.some((variant) => variant.stock > 0),
+        );
+
+        if (liveProducts.length === 0 || hasUnsellableProduct) {
+          return { kind: 'preparation_requirements_not_met' } as const;
+        }
+      }
+
+      const statusUpdate = await transaction.liveSession.updateMany({
+        where: { id: liveId, status: transition.expectedStatus },
+        data: {
+          status: transition.nextStatus,
+          nextEventSequence: { increment: 1 },
+          ...(action === 'START' ? { startedAt: occurredAt } : {}),
+          ...(action === 'END' ? { endedAt: occurredAt } : {}),
+        },
       });
 
       if (statusUpdate.count === 0) {
@@ -1828,16 +2465,18 @@ export const prismaLiveRepository: LiveRepository = {
         data: {
           liveId,
           actorId,
-          action: action === 'START' ? 'LIVE_STARTED' : 'LIVE_ENDED',
+          action: transition.auditAction,
           entityType: 'LIVE_SESSION',
           entityId: liveId,
           beforeJson: {
             status: liveBefore.status,
+            scheduledStartAt: liveBefore.scheduledStartAt?.toISOString() ?? null,
             startedAt: liveBefore.startedAt?.toISOString() ?? null,
             endedAt: liveBefore.endedAt?.toISOString() ?? null,
           },
           afterJson: {
             status: liveDto.status,
+            scheduledStartAt: liveBefore.scheduledStartAt?.toISOString() ?? null,
             startedAt: liveDto.startedAt,
             endedAt: liveDto.endedAt,
           },

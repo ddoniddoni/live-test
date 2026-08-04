@@ -1,4 +1,6 @@
 import {
+  adminLiveListSchema,
+  adminLiveSessionSchema,
   aiSuggestionListSchema,
   aiSuggestionSchema,
   aiProductAnswerSchema,
@@ -14,6 +16,7 @@ import {
   couponPublishedEventSchema,
   couponRedeemedEventSchema,
   createAiChatSummaryRequestSchema,
+  createLiveDraftRequestSchema,
   createNextLiveSessionResponseSchema,
   createProductQuestionRequestSchema,
   createOrderRequestSchema,
@@ -23,11 +26,17 @@ import {
   liveSnapshotSchema,
   orderSchema,
   ordersQuerySchema,
+  productCatalogSchema,
   productFeaturedEventSchema,
   publishAnnouncementRequestSchema,
+  replaceLiveProductsRequestSchema,
   reviewAiSuggestionRequestSchema,
+  updateLiveDraftRequestSchema,
+  liveProductListSchema,
 } from '@liveflow/contracts';
 import type {
+  AdminLiveList,
+  AdminLiveSession,
   ApiErrorResponse,
   AiSuggestion,
   AiProductAnswer,
@@ -42,17 +51,23 @@ import type {
   Coupon,
   CouponPublishedEvent,
   CouponRedeemedEvent,
+  CreateLiveDraftRequest,
   CreateNextLiveSessionResponse,
   CreateOrderRequest,
   InventoryUpdatedEvent,
   LiveStatusChangedEvent,
+  LiveStatus,
   LiveStatusTransitionAction,
+  LiveProduct,
   LiveSnapshot,
   Order,
   OrdersQuery,
   ProductFeaturedEvent,
+  Product,
   PublishAnnouncementRequest,
+  ReplaceLiveProductsRequest,
   ReviewAiSuggestionRequest,
+  UpdateLiveDraftRequest,
 } from '@liveflow/contracts';
 
 const defaultApiUrl = 'http://localhost:4000';
@@ -94,6 +109,13 @@ export function liveSnapshotQueryKey(liveId: string): readonly ['live', string, 
   return ['live', liveId, 'snapshot'];
 }
 
+export function hasRealtimeSequenceGap(
+  snapshot: LiveSnapshot | undefined,
+  incomingSequence: number,
+): boolean {
+  return !snapshot || incomingSequence > snapshot.lastEventSequence + 1;
+}
+
 export function chatAccessQueryKey(liveId: string): readonly ['live', string, 'chat-access'] {
   return ['live', liveId, 'chat-access'];
 }
@@ -110,10 +132,34 @@ export function recentOrdersQueryKey(liveId: string): readonly ['live', string, 
   return ['live', liveId, 'recent-orders'];
 }
 
+export function viewerOrderQueryKey(orderId: string): readonly ['viewer', 'orders', string] {
+  return ['viewer', 'orders', orderId];
+}
+
 export function inventoryLowAlertsQueryKey(
   liveId: string,
 ): readonly ['live', string, 'inventory-low-alerts'] {
   return ['live', liveId, 'inventory-low-alerts'];
+}
+
+export function adminLiveListQueryKey(
+  status?: LiveStatus,
+): readonly ['admin', 'lives', LiveStatus | 'ALL'] {
+  return ['admin', 'lives', status ?? 'ALL'];
+}
+
+export function adminLiveQueryKey(liveId: string): readonly ['admin', 'lives', string] {
+  return ['admin', 'lives', liveId];
+}
+
+export function productCatalogQueryKey(): readonly ['admin', 'products', 'catalog'] {
+  return ['admin', 'products', 'catalog'];
+}
+
+export function liveProductsQueryKey(
+  liveId: string,
+): readonly ['admin', 'lives', string, 'products'] {
+  return ['admin', 'lives', liveId, 'products'];
 }
 
 export async function fetchLiveSnapshot(liveId: string): Promise<LiveSnapshot> {
@@ -139,6 +185,136 @@ export async function createAdminSession(password: string): Promise<string> {
   return demoSessionResponseSchema.parse(body).accessToken;
 }
 
+export async function fetchAdminLives(
+  accessToken: string,
+  query: { cursor?: string; limit?: number; status?: LiveStatus } = {},
+): Promise<AdminLiveList> {
+  const searchParams = new URLSearchParams();
+  if (query.cursor) {
+    searchParams.set('cursor', query.cursor);
+  }
+  if (query.limit !== undefined) {
+    searchParams.set('limit', String(query.limit));
+  }
+  if (query.status) {
+    searchParams.set('status', query.status);
+  }
+  const queryString = searchParams.size > 0 ? `?${searchParams.toString()}` : '';
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives${queryString}`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+
+  return adminLiveListSchema.parse(body);
+}
+
+export async function fetchAdminLive(
+  liveId: string,
+  accessToken: string,
+): Promise<AdminLiveSession> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+
+  return adminLiveSessionSchema.parse(body);
+}
+
+export async function fetchProductCatalog(accessToken: string): Promise<Product[]> {
+  const body = await readResponse(
+    await fetch(getApiUrl('/api/v1/admin/products'), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+
+  return productCatalogSchema.parse(body);
+}
+
+export async function fetchLiveProducts(
+  liveId: string,
+  accessToken: string,
+): Promise<LiveProduct[]> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/products`), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+
+  return liveProductListSchema.parse(body);
+}
+
+export async function replaceLiveProducts(
+  liveId: string,
+  input: ReplaceLiveProductsRequest,
+  accessToken: string,
+): Promise<LiveProduct[]> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/products`), {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(replaceLiveProductsRequestSchema.parse(input)),
+    }),
+  );
+
+  return liveProductListSchema.parse(body);
+}
+
+export async function createLiveDraft(
+  input: CreateLiveDraftRequest,
+  accessToken: string,
+): Promise<AdminLiveSession> {
+  const body = await readResponse(
+    await fetch(getApiUrl('/api/v1/admin/lives'), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(createLiveDraftRequestSchema.parse(input)),
+    }),
+  );
+
+  return adminLiveSessionSchema.parse(body);
+}
+
+export async function updateLiveDraft(
+  liveId: string,
+  input: UpdateLiveDraftRequest,
+  accessToken: string,
+): Promise<AdminLiveSession> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}`), {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(updateLiveDraftRequestSchema.parse(input)),
+    }),
+  );
+
+  return adminLiveSessionSchema.parse(body);
+}
+
+export async function cancelLiveDraft(
+  liveId: string,
+  accessToken: string,
+): Promise<AdminLiveSession> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/cancel`), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+
+  return adminLiveSessionSchema.parse(body);
+}
+
 export async function featureProduct(
   liveId: string,
   productId: string | null,
@@ -162,7 +338,13 @@ async function changeLiveStatus(
   action: LiveStatusTransitionAction,
   accessToken: string,
 ): Promise<LiveStatusChangedEvent> {
-  const path = action === 'START' ? 'start' : 'end';
+  const paths: Record<LiveStatusTransitionAction, string> = {
+    SCHEDULE: 'schedule',
+    PREPARE: 'prepare',
+    START: 'start',
+    END: 'end',
+  };
+  const path = paths[action];
   const body = await readResponse(
     await fetch(getApiUrl(`/api/v1/admin/lives/${liveId}/${path}`), {
       method: 'POST',
@@ -174,6 +356,14 @@ async function changeLiveStatus(
 
 export function startLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
   return changeLiveStatus(liveId, 'START', accessToken);
+}
+
+export function scheduleLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
+  return changeLiveStatus(liveId, 'SCHEDULE', accessToken);
+}
+
+export function prepareLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
+  return changeLiveStatus(liveId, 'PREPARE', accessToken);
 }
 
 export function endLive(liveId: string, accessToken: string): Promise<LiveStatusChangedEvent> {
@@ -454,6 +644,15 @@ export async function createMockOrder(
         'idempotency-key': idempotencyKey,
       },
       body: JSON.stringify(parsedInput),
+    }),
+  );
+  return orderSchema.parse(body);
+}
+
+export async function fetchViewerOrder(orderId: string, accessToken: string): Promise<Order> {
+  const body = await readResponse(
+    await fetch(getApiUrl(`/api/v1/orders/${encodeURIComponent(orderId)}`), {
+      headers: { authorization: `Bearer ${accessToken}` },
     }),
   );
   return orderSchema.parse(body);

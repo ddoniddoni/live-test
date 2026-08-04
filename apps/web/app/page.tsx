@@ -206,7 +206,7 @@ export default function Home() {
         <p>좋아하는 크리에이터의 소식과 한정판 드롭 정보를 가장 먼저 확인하세요.</p>
         <div>
           <Link href="/live/demo">라이브 둘러보기</Link>
-          <Link href="/admin/lives/demo">방송 운영하기</Link>
+          <Link href="/admin/lives">방송 운영하기</Link>
         </div>
       </section>
 
@@ -219,12 +219,12 @@ export default function Home() {
           <a href="#live-now">Live</a>
           <a href="#schedule">Schedule</a>
           <Link href="/live/demo">Viewer</Link>
-          <Link href="/admin/lives/demo">Operator</Link>
+          <Link href="/admin/lives">Operator</Link>
         </div>
         <small>© 2026 LiveFlow. All rights reserved.</small>
       </footer>
 
-      <Link aria-label="방송 운영하기" className="home-fab" href="/admin/lives/demo">
+      <Link aria-label="방송 운영하기" className="home-fab" href="/admin/lives">
         ▣
       </Link>
     </main>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  adminLiveListQuerySchema,
+  adminLiveListSchema,
   aiChatSummarySchema,
   aiProductAnswerSchema,
   adminOrderListSchema,
@@ -26,6 +28,7 @@ import {
   inventoryUpdatedEventSchema,
   inventoryLowEventSchema,
   liveStatusChangedEventSchema,
+  orderParamsSchema,
   orderSchema,
   orderCreatedEventSchema,
   orderStatusChangedEventSchema,
@@ -34,7 +37,11 @@ import {
   publishCouponRequestSchema,
   reviewAiSuggestionRequestSchema,
   roleSchema,
+  createLiveDraftRequestSchema,
+  liveProductListSchema,
+  liveStatusSchema,
   liveStatusTransitionActionSchema,
+  replaceLiveProductsRequestSchema,
 } from './index.js';
 
 describe('shared contracts', () => {
@@ -117,6 +124,76 @@ describe('shared contracts', () => {
         startedAt: null,
         endedAt: null,
       }).success,
+    ).toBe(true);
+  });
+
+  it('validates the private broadcast draft contract and list cursor', () => {
+    expect(liveStatusSchema.safeParse('DRAFT').success).toBe(true);
+    expect(liveStatusSchema.safeParse('SCHEDULED').success).toBe(true);
+    expect(liveStatusSchema.safeParse('CANCELLED').success).toBe(true);
+    expect(liveStatusSchema.safeParse('ARCHIVED').success).toBe(false);
+    expect(
+      createLiveDraftRequestSchema.safeParse({
+        title: '가을 데일리룩 라이브',
+        description: '가을 신상품을 소개하는 방송입니다.',
+        scheduledStartAt: '2099-09-01T10:00:00.000Z',
+      }).success,
+    ).toBe(true);
+    expect(
+      createLiveDraftRequestSchema.safeParse({
+        title: ' ',
+        description: '방송 설명',
+        scheduledStartAt: 'not-a-date',
+      }).success,
+    ).toBe(false);
+    expect(adminLiveListQuerySchema.parse({})).toEqual({ limit: 20 });
+    expect(
+      adminLiveListSchema.safeParse({
+        lives: [
+          {
+            id: 'draft-live',
+            title: '가을 데일리룩 라이브',
+            description: '가을 신상품을 소개하는 방송입니다.',
+            thumbnailUrl: null,
+            scheduledStartAt: '2099-09-01T10:00:00.000Z',
+            status: 'DRAFT',
+            startedAt: null,
+            endedAt: null,
+            createdAt: '2026-08-04T00:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('validates an ordered, unique list of sellable broadcast products', () => {
+    expect(
+      replaceLiveProductsRequestSchema.safeParse({
+        productIds: ['soft-knit', 'linen-shirt'],
+      }).success,
+    ).toBe(true);
+    expect(
+      replaceLiveProductsRequestSchema.safeParse({
+        productIds: ['soft-knit', 'soft-knit'],
+      }).success,
+    ).toBe(false);
+    expect(liveStatusTransitionActionSchema.safeParse('SCHEDULE').success).toBe(true);
+    expect(liveStatusTransitionActionSchema.safeParse('PREPARE').success).toBe(true);
+    expect(
+      liveProductListSchema.safeParse([
+        {
+          liveId: 'draft-live',
+          displayOrder: 0,
+          product: {
+            id: 'soft-knit',
+            name: '소프트 릴랙스 니트',
+            description: '피부에 부드럽게 닿는 여름용 릴랙스 핏 니트입니다.',
+            priceKrw: 39000,
+            variants: [{ id: 'soft-knit-m', name: 'M', stock: 12 }],
+          },
+        },
+      ]).success,
     ).toBe(true);
   });
 
@@ -395,6 +472,8 @@ describe('shared contracts', () => {
         .success,
     ).toBe(false);
     expect(orderSchema.safeParse(order).success).toBe(true);
+    expect(orderParamsSchema.safeParse({ orderId: 'order-1' }).success).toBe(true);
+    expect(orderParamsSchema.safeParse({ orderId: '' }).success).toBe(false);
     expect(
       inventoryUpdatedEventSchema.safeParse({
         eventId: 'event-8',

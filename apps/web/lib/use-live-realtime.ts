@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   realtimeEventSchema,
@@ -8,6 +8,7 @@ import {
   type ChatMessagePage,
   type InventoryLowEvent,
   type LiveSnapshot,
+  type RealtimeEvent,
 } from '@liveflow/contracts';
 import { io } from 'socket.io-client';
 
@@ -15,7 +16,9 @@ import {
   aiSuggestionsQueryKey,
   chatAccessQueryKey,
   fetchChatMessages,
+  fetchLiveSnapshot,
   getSocketUrl,
+  hasRealtimeSequenceGap,
   inventoryLowAlertsQueryKey,
   liveSnapshotQueryKey,
   mergeAnnouncementPublishedEvent,
@@ -32,9 +35,33 @@ import {
 
 export type ConnectionState = 'CONNECTING' | 'CONNECTED' | 'RECOVERING' | 'DISCONNECTED' | 'FAILED';
 
-export function useLiveRealtime(liveId: string, accessToken: string | null): ConnectionState {
+export type LiveRealtimeConnection = {
+  connectionState: ConnectionState;
+  retry: () => void;
+};
+
+function advanceEventSequence(
+  snapshot: LiveSnapshot | undefined,
+  incomingSequence: number,
+): LiveSnapshot | undefined {
+  if (!snapshot || incomingSequence <= snapshot.lastEventSequence) {
+    return snapshot;
+  }
+
+  return { ...snapshot, lastEventSequence: incomingSequence };
+}
+
+export function useLiveRealtime(
+  liveId: string,
+  accessToken: string | null,
+): LiveRealtimeConnection {
   const queryClient = useQueryClient();
   const [connectionState, setConnectionState] = useState<ConnectionState>('CONNECTING');
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const retry = useCallback(() => {
+    setConnectionState('CONNECTING');
+    setRetryAttempt((currentAttempt) => currentAttempt + 1);
+  }, []);
 
   useEffect(() => {
     if (!accessToken) {
@@ -42,6 +69,9 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
     }
 
     let hasConnected = false;
+    let isActive = true;
+    let isSynchronizing = false;
+    let queuedEvents: RealtimeEvent[] = [];
     const queryKey = liveSnapshotQueryKey(liveId);
     const socket = io(getSocketUrl(), {
       auth: { token: accessToken },
@@ -69,6 +99,179 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
       return pages;
     };
 
+    const processLiveEvent = (liveEvent: RealtimeEvent): void => {
+      if (!isActive) {
+        return;
+      }
+
+      if (isSynchronizing) {
+        queuedEvents.push(liveEvent);
+        return;
+      }
+
+      const snapshot = queryClient.getQueryData<LiveSnapshot>(queryKey);
+      if (!snapshot || hasRealtimeSequenceGap(snapshot, liveEvent.sequence)) {
+        void synchronizeState(snapshot?.chat.lastMessageSequence ?? 0);
+        return;
+      }
+
+      if (liveEvent.sequence <= snapshot.lastEventSequence) {
+        return;
+      }
+
+      if (liveEvent.type === 'live.status.changed') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeLiveStatusChangedEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'product.featured') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeProductFeaturedEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'coupon.published') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeCouponPublishedEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'coupon.redeemed') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeCouponRedeemedEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'announcement.published') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeAnnouncementPublishedEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'ai.suggestion.created') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          advanceEventSequence(currentSnapshot, liveEvent.sequence),
+        );
+        void queryClient.invalidateQueries({ queryKey: aiSuggestionsQueryKey(liveId) });
+        return;
+      }
+
+      if (liveEvent.type === 'inventory.updated') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeInventoryUpdatedEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'order.status.changed') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          advanceEventSequence(currentSnapshot, liveEvent.sequence),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'order.created') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          advanceEventSequence(currentSnapshot, liveEvent.sequence),
+        );
+        void queryClient.invalidateQueries({ queryKey: recentOrdersQueryKey(liveId) });
+        return;
+      }
+
+      if (liveEvent.type === 'inventory.low') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          advanceEventSequence(currentSnapshot, liveEvent.sequence),
+        );
+        queryClient.setQueryData<InventoryLowEvent[]>(
+          inventoryLowAlertsQueryKey(liveId),
+          (alerts = []) =>
+            alerts.some((alert) => alert.eventId === liveEvent.eventId)
+              ? alerts
+              : [liveEvent, ...alerts].slice(0, 3),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'chat.message.hidden') {
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          mergeChatMessageHiddenEvent(currentSnapshot, liveEvent),
+        );
+        return;
+      }
+
+      if (liveEvent.type === 'chat.user.timed_out') {
+        queryClient.setQueryData<ChatAccessStatus>(chatAccessQueryKey(liveId), {
+          timeoutExpiresAt: liveEvent.payload.expiresAt,
+        });
+        queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
+          advanceEventSequence(currentSnapshot, liveEvent.sequence),
+        );
+        return;
+      }
+
+      queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) => {
+        const mergedSnapshot = mergeChatMessage(currentSnapshot, liveEvent.payload.message);
+        return mergedSnapshot
+          ? { ...mergedSnapshot, lastEventSequence: liveEvent.sequence }
+          : mergedSnapshot;
+      });
+    };
+
+    const synchronizeState = async (afterMessageSequence: number): Promise<void> => {
+      if (isSynchronizing) {
+        return;
+      }
+
+      isSynchronizing = true;
+      setConnectionState('RECOVERING');
+
+      try {
+        const [snapshot, pages] = await Promise.all([
+          fetchLiveSnapshot(liveId),
+          fetchRecoveryPages(afterMessageSequence),
+        ]);
+        if (!isActive) {
+          return;
+        }
+
+        const recoveredSnapshot = pages.reduce<LiveSnapshot>(
+          (currentSnapshot, page) => mergeChatMessagePage(currentSnapshot, page) ?? currentSnapshot,
+          snapshot,
+        );
+        queryClient.setQueryData(queryKey, recoveredSnapshot);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: aiSuggestionsQueryKey(liveId) }),
+          queryClient.invalidateQueries({ queryKey: chatAccessQueryKey(liveId) }),
+          queryClient.invalidateQueries({ queryKey: recentOrdersQueryKey(liveId) }),
+        ]);
+
+        const eventsToProcess = queuedEvents.toSorted(
+          (left, right) => left.sequence - right.sequence,
+        );
+        queuedEvents = [];
+        isSynchronizing = false;
+        for (const queuedEvent of eventsToProcess) {
+          processLiveEvent(queuedEvent);
+        }
+
+        if (!isSynchronizing) {
+          setConnectionState('CONNECTED');
+        }
+      } catch {
+        if (isActive) {
+          setConnectionState('FAILED');
+        }
+      } finally {
+        isSynchronizing = false;
+      }
+    };
+
     const handleConnect = () => {
       setConnectionState(hasConnected ? 'RECOVERING' : 'CONNECTING');
       const snapshot = queryClient.getQueryData<LiveSnapshot>(queryKey);
@@ -85,24 +288,7 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
           }
 
           hasConnected = true;
-          setConnectionState('RECOVERING');
-          void Promise.all([
-            queryClient.invalidateQueries({ queryKey }),
-            fetchRecoveryPages(lastMessageSequence),
-            queryClient.invalidateQueries({ queryKey: chatAccessQueryKey(liveId) }),
-          ])
-            .then(([, pages]) => {
-              queryClient.setQueryData<LiveSnapshot>(queryKey, (currentSnapshot) =>
-                pages.reduce(
-                  (mergedSnapshot, page) => mergeChatMessagePage(mergedSnapshot, page),
-                  currentSnapshot,
-                ),
-              );
-              setConnectionState('CONNECTED');
-            })
-            .catch(() => {
-              setConnectionState('FAILED');
-            });
+          void synchronizeState(lastMessageSequence);
         },
       );
     };
@@ -113,122 +299,7 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
         return;
       }
 
-      const liveEvent = event.data;
-
-      if (liveEvent.type === 'live.status.changed') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeLiveStatusChangedEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'product.featured') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeProductFeaturedEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'coupon.published') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeCouponPublishedEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'coupon.redeemed') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeCouponRedeemedEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'announcement.published') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeAnnouncementPublishedEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'ai.suggestion.created') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
-            ? snapshot
-            : { ...snapshot, lastEventSequence: liveEvent.sequence },
-        );
-        void queryClient.invalidateQueries({ queryKey: aiSuggestionsQueryKey(liveId) });
-        return;
-      }
-
-      if (liveEvent.type === 'inventory.updated') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeInventoryUpdatedEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'order.status.changed') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
-            ? snapshot
-            : { ...snapshot, lastEventSequence: liveEvent.sequence },
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'order.created') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
-            ? snapshot
-            : { ...snapshot, lastEventSequence: liveEvent.sequence },
-        );
-        void queryClient.invalidateQueries({ queryKey: recentOrdersQueryKey(liveId) });
-        return;
-      }
-
-      if (liveEvent.type === 'inventory.low') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          !snapshot || liveEvent.sequence <= snapshot.lastEventSequence
-            ? snapshot
-            : { ...snapshot, lastEventSequence: liveEvent.sequence },
-        );
-        queryClient.setQueryData<InventoryLowEvent[]>(
-          inventoryLowAlertsQueryKey(liveId),
-          (alerts = []) =>
-            alerts.some((alert) => alert.eventId === liveEvent.eventId)
-              ? alerts
-              : [liveEvent, ...alerts].slice(0, 3),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'chat.message.hidden') {
-        queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) =>
-          mergeChatMessageHiddenEvent(snapshot, liveEvent),
-        );
-        return;
-      }
-
-      if (liveEvent.type === 'chat.user.timed_out') {
-        queryClient.setQueryData<ChatAccessStatus>(chatAccessQueryKey(liveId), {
-          timeoutExpiresAt: liveEvent.payload.expiresAt,
-        });
-        return;
-      }
-
-      const message = liveEvent.payload.message;
-      const eventSequence = liveEvent.sequence;
-
-      queryClient.setQueryData<LiveSnapshot>(queryKey, (snapshot) => {
-        if (!snapshot || eventSequence <= snapshot.lastEventSequence) {
-          return snapshot;
-        }
-
-        const mergedSnapshot = mergeChatMessage(snapshot, message);
-        return mergedSnapshot
-          ? { ...mergedSnapshot, lastEventSequence: eventSequence }
-          : mergedSnapshot;
-      });
+      processLiveEvent(event.data);
     };
 
     const handleDisconnect = () => {
@@ -236,7 +307,7 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
     };
 
     const handleConnectError = () => {
-      setConnectionState(hasConnected ? 'RECOVERING' : 'FAILED');
+      setConnectionState('FAILED');
     };
 
     socket.on('connect', handleConnect);
@@ -247,13 +318,17 @@ export function useLiveRealtime(liveId: string, accessToken: string | null): Con
     socket.connect();
 
     return () => {
+      isActive = false;
       socket.off('connect', handleConnect);
       socket.off('live.event', handleLiveEvent);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       socket.close();
     };
-  }, [accessToken, liveId, queryClient]);
+  }, [accessToken, liveId, queryClient, retryAttempt]);
 
-  return accessToken ? connectionState : 'CONNECTING';
+  return {
+    connectionState: accessToken ? connectionState : 'CONNECTING',
+    retry,
+  };
 }

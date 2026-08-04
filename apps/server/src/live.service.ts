@@ -1,13 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type {
+  AdminLiveSession,
+  AdminLiveListQuery,
+  AuditLogsQuery,
   ChatMessage,
   ChatMessagesQuery,
   Coupon,
-  AuditLogsQuery,
+  CreateLiveDraftRequest,
   LiveStatusTransitionAction,
   OrdersQuery,
+  Product,
+  ReplaceLiveProductsRequest,
   ReviewAiSuggestionRequest,
+  UpdateLiveDraftRequest,
 } from '@liveflow/contracts';
 
 import { AiService } from './ai.service.js';
@@ -23,6 +29,42 @@ export class LiveService {
 
   getSnapshot(liveId: string) {
     return this.liveRepository.getSnapshot(liveId);
+  }
+
+  getAdminLive(liveId: string): Promise<AdminLiveSession | null> {
+    return this.liveRepository.getAdminLive(liveId);
+  }
+
+  listAdminLives(query: AdminLiveListQuery) {
+    return this.liveRepository.listAdminLives(query);
+  }
+
+  listCatalogProducts(): Promise<Product[]> {
+    return this.liveRepository.listCatalogProducts();
+  }
+
+  getLiveProducts(liveId: string) {
+    return this.liveRepository.getLiveProducts(liveId);
+  }
+
+  replaceLiveProducts(input: {
+    actorId: string;
+    liveId: string;
+    productIds: ReplaceLiveProductsRequest['productIds'];
+  }) {
+    return this.liveRepository.replaceLiveProducts(input);
+  }
+
+  createLiveDraft(input: { actorId: string; draft: CreateLiveDraftRequest }) {
+    return this.liveRepository.createLiveDraft(input);
+  }
+
+  updateLiveDraft(input: { actorId: string; draft: UpdateLiveDraftRequest; liveId: string }) {
+    return this.liveRepository.updateLiveDraft(input);
+  }
+
+  cancelLiveDraft(input: { actorId: string; liveId: string }) {
+    return this.liveRepository.cancelLiveDraft(input);
   }
 
   getMessages(liveId: string, query: ChatMessagesQuery) {
@@ -51,6 +93,10 @@ export class LiveService {
     idempotencyKey: string;
   }) {
     return this.liveRepository.createOrder(input);
+  }
+
+  getViewerOrder(input: { orderId: string; userId: string }) {
+    return this.liveRepository.getViewerOrder(input);
   }
 
   getRecentOrders(liveId: string, query: OrdersQuery) {

@@ -82,14 +82,41 @@ async function main(): Promise<void> {
 
   await prisma.liveSession.create({
     data: {
+      createdById: admin.id,
+      description:
+        '가벼운 여름 스타일과 실용적인 데일리 아이템을 소개하는 LiveFlow 대표 방송입니다.',
       id: 'demo',
+      scheduledStartAt: new Date('2026-08-04T09:00:00.000Z'),
       title: 'LiveFlow 데모 방송',
       status: LiveStatus.READY,
       featuredProductId: 'soft-knit',
+      liveProducts: {
+        create: [
+          { productId: 'soft-knit', displayOrder: 0 },
+          { productId: 'linen-shirt', displayOrder: 1 },
+          { productId: 'daily-bag', displayOrder: 2 },
+        ],
+      },
       chatRoom: {
         create: {
           id: 'demo-chat',
           nextSequence: DEMO_CHAT_MESSAGE_COUNT + 1,
+        },
+      },
+    },
+  });
+
+  await prisma.liveSession.create({
+    data: {
+      createdById: admin.id,
+      description: '방송 준비가 끝나면 판매 상품과 진행 구성을 추가할 운영자 초안입니다.',
+      id: 'demo-autumn-draft',
+      scheduledStartAt: new Date('2026-09-01T11:00:00.000Z'),
+      title: '가을 라이브 기획 초안',
+      status: LiveStatus.DRAFT,
+      chatRoom: {
+        create: {
+          id: 'demo-autumn-draft-chat',
         },
       },
     },

@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   chatAccessQueryKey,
+  hasRealtimeSequenceGap,
   mergeAnnouncementPublishedEvent,
   mergeChatMessageHiddenEvent,
   mergeCouponPublishedEvent,
@@ -75,6 +76,19 @@ const hiddenEvent: ChatMessageHiddenEvent = {
   occurredAt: '2026-07-31T00:00:02.000Z',
   payload: { messageId: 'message-2' },
 };
+
+describe('hasRealtimeSequenceGap', () => {
+  it('requests a snapshot sync when an event is missing or the cache is unavailable', () => {
+    expect(hasRealtimeSequenceGap(snapshot, 5)).toBe(false);
+    expect(hasRealtimeSequenceGap(snapshot, 6)).toBe(true);
+    expect(hasRealtimeSequenceGap(undefined, 1)).toBe(true);
+  });
+
+  it('does not treat duplicated or older events as a missing sequence', () => {
+    expect(hasRealtimeSequenceGap(snapshot, 4)).toBe(false);
+    expect(hasRealtimeSequenceGap(snapshot, 3)).toBe(false);
+  });
+});
 
 describe('mergeChatMessageHiddenEvent', () => {
   it('removes the hidden message once and advances the live event sequence', () => {

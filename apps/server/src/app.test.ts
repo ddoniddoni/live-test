@@ -1,4 +1,6 @@
 import type {
+  AdminLiveList,
+  AdminLiveSession,
   AdminOrder,
   AiSuggestion,
   AiSuggestionCreatedEvent,
@@ -12,6 +14,7 @@ import type {
   InventoryUpdatedEvent,
   InventoryLowEvent,
   LiveStatusChangedEvent,
+  LiveProduct,
   LiveSnapshot,
   Order,
   OrderCreatedEvent,
@@ -62,6 +65,31 @@ const nextLiveSession: LiveSnapshot['live'] = {
   startedAt: null,
   endedAt: null,
 };
+
+const draftLive: AdminLiveSession = {
+  id: 'draft-live',
+  title: '가을 데일리룩 라이브',
+  description: '가을 신상품을 소개하는 방송입니다.',
+  thumbnailUrl: null,
+  scheduledStartAt: '2099-09-01T10:00:00.000Z',
+  status: 'DRAFT',
+  startedAt: null,
+  endedAt: null,
+  createdAt: '2026-08-04T00:00:00.000Z',
+};
+
+const adminLiveList: AdminLiveList = {
+  lives: [draftLive],
+  nextCursor: null,
+};
+
+const draftLiveProducts: LiveProduct[] = demoSnapshot.products
+  .slice(0, 1)
+  .map((product, index) => ({
+    liveId: draftLive.id,
+    product,
+    displayOrder: index,
+  }));
 
 const demoChatMessage: ChatMessage = {
   id: 'message-1',
@@ -133,6 +161,37 @@ const liveStartedEvent: LiveStatusChangedEvent = {
       status: 'LIVE',
       startedAt: '2026-08-02T00:00:00.000Z',
       endedAt: null,
+    },
+  },
+};
+
+const liveScheduledEvent: LiveStatusChangedEvent = {
+  eventId: 'live-scheduled-event-1',
+  liveId: draftLive.id,
+  sequence: 3,
+  type: 'live.status.changed',
+  occurredAt: '2026-08-02T00:00:00.000Z',
+  payload: {
+    live: {
+      id: draftLive.id,
+      title: draftLive.title,
+      status: 'SCHEDULED',
+      startedAt: null,
+      endedAt: null,
+    },
+  },
+};
+
+const livePreparedEvent: LiveStatusChangedEvent = {
+  eventId: 'live-prepared-event-1',
+  liveId: draftLive.id,
+  sequence: 4,
+  type: 'live.status.changed',
+  occurredAt: '2026-08-02T00:01:00.000Z',
+  payload: {
+    live: {
+      ...liveScheduledEvent.payload.live,
+      status: 'READY',
     },
   },
 };
@@ -338,6 +397,25 @@ const auditLogPage: AuditLogPage = {
 
 function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepository {
   return {
+    listAdminLives: vi.fn(async () => adminLiveList),
+    getAdminLive: vi.fn(async (liveId: string) => (liveId === draftLive.id ? draftLive : null)),
+    listCatalogProducts: vi.fn(async () => demoSnapshot.products),
+    getLiveProducts: vi.fn(async (liveId: string) =>
+      liveId === draftLive.id
+        ? { kind: 'found' as const, products: draftLiveProducts }
+        : { kind: 'live_not_found' as const },
+    ),
+    replaceLiveProducts: vi.fn(async () => ({
+      kind: 'updated' as const,
+      products: draftLiveProducts,
+      featuredProductEvent: null,
+    })),
+    createLiveDraft: vi.fn(async () => draftLive),
+    updateLiveDraft: vi.fn(async () => ({ kind: 'updated' as const, live: draftLive })),
+    cancelLiveDraft: vi.fn(async () => ({
+      kind: 'cancelled' as const,
+      live: { ...draftLive, status: 'CANCELLED' as const },
+    })),
     getSnapshot: vi.fn(async (liveId: string) => (liveId === 'demo' ? demoSnapshot : null)),
     getMessages: vi.fn(async (liveId: string) => (liveId === 'demo' ? demoSnapshot.chat : null)),
     getChatAccess: vi.fn(async (liveId: string) =>
@@ -358,6 +436,11 @@ function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepo
       orderEvent: orderStatusChangedEvent,
       adminOrderEvent: orderCreatedEvent,
     })),
+    getViewerOrder: vi.fn(async ({ orderId, userId }: { orderId: string; userId: string }) =>
+      orderId === demoOrder.id && userId === demoOrder.userId
+        ? { kind: 'found' as const, order: demoOrder }
+        : { kind: 'order_not_found' as const },
+    ),
     getRecentOrders: vi.fn(async () => ({
       kind: 'found',
       orders: [demoAdminOrder],
@@ -384,7 +467,14 @@ function createLiveRepository(overrides: Partial<LiveRepository> = {}): LiveRepo
     })),
     changeLiveStatus: vi.fn(async ({ action }) => ({
       kind: 'changed',
-      event: action === 'START' ? liveStartedEvent : liveEndedEvent,
+      event:
+        action === 'SCHEDULE'
+          ? liveScheduledEvent
+          : action === 'PREPARE'
+            ? livePreparedEvent
+            : action === 'START'
+              ? liveStartedEvent
+              : liveEndedEvent,
     })),
     createNextLiveSession: vi.fn(async () => ({
       kind: 'created',
@@ -478,6 +568,232 @@ describe('live product routes', () => {
       live: { id: 'demo', status: 'LIVE' },
       products: [{ id: 'soft-knit' }],
       lastEventSequence: 0,
+    });
+  });
+
+  it('allows only administrators to list broadcasts and create a private draft', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+    const draftRequest = {
+      title: '가을 데일리룩 라이브',
+      description: '가을 신상품을 소개하는 방송입니다.',
+      scheduledStartAt: '2099-09-01T10:00:00.000Z',
+    };
+
+    const deniedListResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/lives',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const grantedListResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/lives',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const deniedCreateResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives',
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: draftRequest,
+    });
+    const createdResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: draftRequest,
+    });
+
+    expect(deniedListResponse.statusCode).toBe(403);
+    expect(grantedListResponse.statusCode).toBe(200);
+    expect(grantedListResponse.json()).toEqual(adminLiveList);
+    expect(deniedCreateResponse.statusCode).toBe(403);
+    expect(createdResponse.statusCode).toBe(201);
+    expect(createdResponse.json()).toEqual(draftLive);
+    expect(liveRepository.listAdminLives).toHaveBeenCalledWith({ limit: 20 });
+    expect(liveRepository.createLiveDraft).toHaveBeenCalledWith({
+      actorId: 'demo-admin',
+      draft: draftRequest,
+    });
+  });
+
+  it('rejects an expired draft schedule before it reaches persistence', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        title: '지난 방송',
+        description: '저장되면 안 되는 과거 일정입니다.',
+        scheduledStartAt: '2020-01-01T10:00:00.000Z',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: 'LIVE_SCHEDULED_START_INVALID' });
+    expect(liveRepository.createLiveDraft).not.toHaveBeenCalled();
+  });
+
+  it('allows only administrators to prepare the product queue for a broadcast', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+
+    const deniedCatalogResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/products',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const catalogResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/products',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const deniedReplaceResponse = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/admin/lives/${draftLive.id}/products`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: { productIds: ['soft-knit'] },
+    });
+    const replaceResponse = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/admin/lives/${draftLive.id}/products`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { productIds: ['soft-knit'] },
+    });
+
+    expect(deniedCatalogResponse.statusCode).toBe(403);
+    expect(catalogResponse.statusCode).toBe(200);
+    expect(catalogResponse.json()).toEqual(demoSnapshot.products);
+    expect(deniedReplaceResponse.statusCode).toBe(403);
+    expect(replaceResponse.statusCode).toBe(200);
+    expect(replaceResponse.json()).toEqual(draftLiveProducts);
+    expect(liveRepository.replaceLiveProducts).toHaveBeenCalledWith({
+      actorId: 'demo-admin',
+      liveId: draftLive.id,
+      productIds: ['soft-knit'],
+    });
+  });
+
+  it('moves a prepared broadcast through scheduled and ready states only for administrators', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const publishRealtimeEvent = vi.spyOn(app.get(LiveGateway), 'publish');
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+
+    const deniedResponse = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/lives/${draftLive.id}/schedule`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const scheduledResponse = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/lives/${draftLive.id}/schedule`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const preparedResponse = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/lives/${draftLive.id}/prepare`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(scheduledResponse.statusCode).toBe(200);
+    expect(scheduledResponse.json()).toEqual(liveScheduledEvent);
+    expect(preparedResponse.statusCode).toBe(200);
+    expect(preparedResponse.json()).toEqual(livePreparedEvent);
+    expect(liveRepository.changeLiveStatus).toHaveBeenNthCalledWith(1, {
+      liveId: draftLive.id,
+      actorId: 'demo-admin',
+      action: 'SCHEDULE',
+    });
+    expect(liveRepository.changeLiveStatus).toHaveBeenNthCalledWith(2, {
+      liveId: draftLive.id,
+      actorId: 'demo-admin',
+      action: 'PREPARE',
+    });
+    expect(publishRealtimeEvent).toHaveBeenCalledWith(liveScheduledEvent);
+    expect(publishRealtimeEvent).toHaveBeenCalledWith(livePreparedEvent);
+  });
+
+  it('keeps an incomplete draft out of the scheduled state', async () => {
+    const liveRepository = createLiveRepository({
+      changeLiveStatus: vi.fn(async () => ({ kind: 'schedule_requirements_not_met' as const })),
+    });
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/admin/lives/${draftLive.id}/schedule`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'LIVE_SCHEDULE_REQUIREMENTS_NOT_MET' });
+  });
+
+  it('allows only administrators to update or cancel a draft', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+    const draftRequest = {
+      title: '수정된 가을 데일리룩 라이브',
+      description: '수정된 방송 설명입니다.',
+      scheduledStartAt: '2099-09-02T10:00:00.000Z',
+    };
+
+    const deniedUpdateResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/admin/lives/draft-live',
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: draftRequest,
+    });
+    const updatedResponse = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/admin/lives/draft-live',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: draftRequest,
+    });
+    const deniedCancelResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives/draft-live/cancel',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const cancelledResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/admin/lives/draft-live/cancel',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(deniedUpdateResponse.statusCode).toBe(403);
+    expect(updatedResponse.statusCode).toBe(200);
+    expect(updatedResponse.json()).toEqual(draftLive);
+    expect(deniedCancelResponse.statusCode).toBe(403);
+    expect(cancelledResponse.statusCode).toBe(200);
+    expect(cancelledResponse.json()).toEqual({ ...draftLive, status: 'CANCELLED' });
+    expect(liveRepository.updateLiveDraft).toHaveBeenCalledWith({
+      actorId: 'demo-admin',
+      draft: draftRequest,
+      liveId: 'draft-live',
+    });
+    expect(liveRepository.cancelLiveDraft).toHaveBeenCalledWith({
+      actorId: 'demo-admin',
+      liveId: 'draft-live',
     });
   });
 
@@ -821,6 +1137,40 @@ describe('live product routes', () => {
     expect(publishToUser).toHaveBeenCalledWith(orderStatusChangedEvent, 'demo-viewer');
     expect(publishToAdmins).toHaveBeenCalledWith(orderCreatedEvent);
     expect(publishToAdmins).toHaveBeenCalledWith(inventoryLowEvent);
+  });
+
+  it('returns a viewer order only to its owner', async () => {
+    const liveRepository = createLiveRepository();
+    const app = await buildServer({ liveRepository });
+    servers.push(app);
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+
+    const deniedResponse = await app.inject({
+      method: 'GET',
+      url: `/api/v1/orders/${demoOrder.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const foundResponse = await app.inject({
+      method: 'GET',
+      url: `/api/v1/orders/${demoOrder.id}`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const missingResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/orders/order-not-owned-by-viewer',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(foundResponse.statusCode).toBe(200);
+    expect(foundResponse.json()).toEqual(demoOrder);
+    expect(missingResponse.statusCode).toBe(404);
+    expect(missingResponse.json()).toMatchObject({ code: 'ORDER_NOT_FOUND' });
+    expect(liveRepository.getViewerOrder).toHaveBeenCalledWith({
+      orderId: demoOrder.id,
+      userId: 'demo-viewer',
+    });
   });
 });
 

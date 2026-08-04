@@ -18,7 +18,7 @@
 
 ## 1. 제품 요약
 
-LiveFlow는 시청자가 라이브 방송에서 상품을 탐색·질문·구매하고, 운영자가 별도 어드민 컨트롤룸에서 상품·쿠폰·채팅·주문을 실시간으로 관리하는 AI 기반 라이브커머스 데모다.
+LiveFlow는 시청자가 라이브 방송에서 상품을 탐색·질문·구매하고, 운영자가 여러 방송을 등록·준비한 뒤 별도 어드민 컨트롤룸에서 상품·쿠폰·채팅·주문을 실시간으로 관리하는 AI 기반 라이브커머스 데모다.
 
 핵심은 두 개의 화면을 따로 만드는 것이 아니라 다음 폐쇄 루프를 실제로 구현하는 것이다.
 
@@ -80,6 +80,7 @@ AI는 단순 챗봇 장식이 아니다.
 ### 4.1 MVP 목표
 
 - 사용자 화면과 어드민 화면이 하나의 방송 상태를 공유한다.
+- Admin은 방송을 초안부터 생성하고, 예정 시간을 정하고, 판매 상품을 준비한 뒤 하나의 방송 단위로 운영한다.
 - 운영자의 상품·쿠폰·공지 변경이 사용자 화면에 실시간 반영된다.
 - 채팅 메시지가 DB에 저장되고 실시간 전파되며 재접속 시 누락분이 복구된다.
 - Mock 주문이 서버 transaction과 idempotency 규칙을 따른다.
@@ -103,6 +104,8 @@ MVP에서는 다음을 구현하지 않는다.
 - 실제 고객 개인정보 또는 민감 데이터
 - 완전한 CMS·상품 등록 백오피스
 
+MVP의 방송 관리는 단일 판매자 조직의 demo 데이터만 대상으로 한다. 여러 판매자 조직, 진행자 정산, 방송 권한 위임은 후속 범위다.
+
 영상은 사전 녹화 MP4를 `startedAt` 기준으로 동기화한 “가짜 라이브”로 구현한다.
 
 ---
@@ -119,6 +122,8 @@ MVP에서는 다음을 구현하지 않는다.
 
 ### 5.2 Admin
 
+- 방송 목록에서 새 방송을 만들고, 초안·예정·준비·진행·종료 상태를 관리한다.
+- 방송에 판매할 상품을 추가하고 노출 순서를 준비한다.
 - 방송을 시작·종료한다.
 - 방송에 노출할 상품을 선택한다.
 - 쿠폰과 공지를 발행한다.
@@ -141,20 +146,21 @@ MVP에서는 다음을 구현하지 않는다.
 
 3분 내에 다음 흐름을 보여줄 수 있어야 한다.
 
-1. 운영자가 `/admin/lives/demo`에서 데모 방송을 시작한다.
-2. 사용자 `/live/demo`의 영상과 방송 상태가 실시간으로 LIVE로 변경된다.
-3. 운영자가 상품 A를 “현재 소개 상품”으로 지정한다.
-4. 사용자 화면에 상품 A 카드, 옵션, 재고가 즉시 나타난다.
-5. 시뮬레이터 또는 여러 브라우저에서 채팅이 들어온다.
-6. 사용자가 “175cm, 70kg이면 어떤 사이즈인가요?”라고 AI에 질문한다.
-7. AI가 상품 사이즈표를 근거로 답하고 source를 표시한다.
-8. 운영자가 최근 채팅을 AI로 요약해 “배송 문의”가 급증했음을 확인한다.
-9. AI의 공지 초안을 운영자가 수정·승인한다.
-10. 승인된 공지가 사용자 화면에 실시간 노출된다.
-11. 운영자가 10% 쿠폰을 발행한다.
-12. 사용자가 Mock 주문을 완료하고 재고가 양쪽 화면에서 갱신된다.
-13. 네트워크를 잠시 끊었다 다시 연결해 누락 채팅과 최신 상품 상태가 복구되는 것을 보여준다.
-14. 운영자가 메시지를 숨기고 감사 로그에서 행동 이력을 확인한다.
+1. 운영자가 `/admin/lives`에서 새 데모 방송을 만들고, 제목·예정 시각·판매 상품을 준비한다.
+2. 운영자가 준비 점검을 통과시킨 뒤 `/admin/lives/[liveId]`에서 방송을 시작한다.
+3. 사용자 `/live/[liveId]`의 영상과 방송 상태가 실시간으로 LIVE로 변경된다.
+4. 운영자가 상품 A를 “현재 소개 상품”으로 지정한다.
+5. 사용자 화면에 상품 A 카드, 옵션, 재고가 즉시 나타난다.
+6. 시뮬레이터 또는 여러 브라우저에서 채팅이 들어온다.
+7. 사용자가 “175cm, 70kg이면 어떤 사이즈인가요?”라고 AI에 질문한다.
+8. AI가 상품 사이즈표를 근거로 답하고 source를 표시한다.
+9. 운영자가 최근 채팅을 AI로 요약해 “배송 문의”가 급증했음을 확인한다.
+10. AI의 공지 초안을 운영자가 수정·승인한다.
+11. 승인된 공지가 사용자 화면에 실시간 노출된다.
+12. 운영자가 10% 쿠폰을 발행한다.
+13. 사용자가 Mock 주문을 완료하고 재고가 양쪽 화면에서 갱신된다.
+14. 네트워크를 잠시 끊었다 다시 연결해 누락 채팅과 최신 상품 상태가 복구되는 것을 보여준다.
+15. 운영자가 메시지를 숨기고 감사 로그에서 행동 이력을 확인한다.
 
 ---
 
@@ -172,6 +178,8 @@ MVP에서는 다음을 구현하지 않는다.
 
 ```text
 /admin                    # 데모 운영자 진입
+/admin/lives              # 방송 목록과 새 방송 진입
+/admin/lives/new          # 방송 초안 생성
 /admin/lives/[liveId]     # 방송 컨트롤룸
 /admin/orders             # 주문 목록
 /admin/audit-logs         # 감사 로그
@@ -214,15 +222,22 @@ MVP에서는 다음을 구현하지 않는다.
 
 ### 8.2 방송 상태
 
-상태는 다음을 사용한다.
+방송 상태는 다음을 사용한다.
 
 ```text
-READY → LIVE → ENDED
+DRAFT → SCHEDULED → READY → LIVE → ENDED
+DRAFT ────────→ CANCELLED
+SCHEDULED ────→ CANCELLED
+READY ────────→ CANCELLED
 ```
 
-- READY: 시작 전 안내와 예정 상품을 표시한다.
+- DRAFT: Admin만 보는 편집 중인 방송이다. 사용자에게 노출하지 않는다.
+- SCHEDULED: 제목·예정 시각·대표 이미지가 준비된 방송이다. 사용자는 시작 예정 안내와 상품 정보를 볼 수 있지만 채팅·주문은 할 수 없다.
+- READY: 시작 점검을 통과한 방송이다. 사용자는 시작 전 안내와 예정 상품을 볼 수 있지만 채팅·주문은 할 수 없다.
 - LIVE: 영상, 채팅, 상품, 쿠폰, 주문을 활성화한다.
 - ENDED: 영상과 채팅 입력을 종료하고 소개 상품 다시보기를 제공한다.
+- CANCELLED: 방송을 시작하지 않고 취소한 상태다. 신규 사용자에게는 방송을 찾을 수 없다는 안내를 제공한다.
+- 상태 전이는 서버가 검증하며, ENDED와 CANCELLED 상태는 다시 진행 상태로 되돌릴 수 없다.
 - 사용자가 늦게 접속하면 `startedAt`을 기준으로 영상 재생 위치를 계산한다.
 - 자동 재생이 브라우저 정책에 막히면 명확한 재생 버튼을 제공한다.
 
@@ -338,7 +353,16 @@ interface ChatMessage {
 
 ## 10. 운영자 컨트롤룸 요구사항
 
-### 10.1 레이아웃
+### 10.1 방송 관리
+
+- Admin은 방송 목록에서 DRAFT, SCHEDULED, READY, LIVE, ENDED, CANCELLED 상태와 예정 시각을 확인한다.
+- Admin은 새 DRAFT 방송에 제목, 설명, 대표 이미지 URL, 예정 시작 시각을 입력한다.
+- 제목은 1~100자, 설명은 최대 500자이며 대표 이미지 URL은 선택 값이다. 시간은 UTC ISO 8601로 저장하고 화면에서는 사용자 locale로 표시한다.
+- DRAFT 또는 SCHEDULED 상태에서만 방송의 기본 정보를 수정할 수 있다.
+- 방송은 삭제하지 않고 CANCELLED 또는 ENDED 상태와 감사 로그로 이력을 보존한다.
+- P1에서는 ENDED 방송의 기본 정보와 상품 목록을 새 DRAFT의 템플릿으로 가져올 수 있다. 채팅, 쿠폰, 주문, 공지, 감사 로그는 절대 복사하지 않는다.
+
+### 10.2 레이아웃
 
 ```text
 ┌──────────────────────────┬──────────────────────────┐
@@ -350,30 +374,35 @@ interface ChatMessage {
 └─────────────────────────────────────────────────────┘
 ```
 
-### 10.2 방송 제어
+### 10.3 방송 준비와 제어
 
+- DRAFT에는 제목, 예정 시각, 판매 상품이 하나 이상 있어야 SCHEDULED로 전환할 수 있다.
+- 일정 등록 시 예정 시각은 서버 현재 시각 이후여야 하며, 예정 시각이 되어도 서버가 자동으로 LIVE로 전환하지 않는다.
+- SCHEDULED 상태에서 판매 가능한 상품·옵션·재고와 Mock 영상 준비 상태를 확인한 뒤 READY로 전환한다.
 - READY 상태에서 방송 시작
 - LIVE 상태에서 방송 종료
-- ENDED 방송에서 새 READY 방송을 만들 수 있다. 이전 방송의 채팅·쿠폰·공지·주문 기록은 복사하거나 삭제하지 않는다.
+- DRAFT, SCHEDULED, READY 상태의 방송은 취소할 수 있다.
 - 유효하지 않은 상태 전이를 서버가 거부
 - 시작·종료 시각과 actor를 감사 로그에 기록
 - 방송 종료 후 신규 viewer 채팅과 주문을 제한
 
-### 10.3 상품 노출
+### 10.4 상품 준비와 노출
 
-- 방송에 연결된 상품 중 하나를 선택한다.
+- Admin은 기존 상품 catalog에서 판매 상품을 읽어 선택한다. 이 기능은 상품 생성·수정 CMS를 포함하지 않는다.
+- Admin은 방송 시작 전에 판매 가능한 상품을 방송 상품 목록에 추가·제거·정렬한다.
+- 방송에 연결된 상품 중 하나를 현재 소개 상품으로 선택한다.
 - 서버 저장 성공 후 `product.featured` 이벤트를 발행한다.
 - UI는 pending과 실패 상태를 표시한다.
 - 두 admin이 동시에 변경할 수 있는 상황을 대비해 서버 결과를 기준으로 한다.
 
-### 10.4 쿠폰과 공지
+### 10.5 쿠폰과 공지
 
 - 할인 타입, 값, 최소 주문 금액, 만료 시각을 입력한다.
 - 잘못된 할인 조건은 서버가 거부한다.
 - 공지는 직접 작성하거나 AI 제안을 수정해 발행한다.
 - AI 제안은 승인 전 public room에 발행하지 않는다.
 
-### 10.5 주문·재고
+### 10.6 주문·재고
 
 - 최근 주문 목록과 상태를 표시한다.
 - 상품 variant별 재고를 표시한다.
@@ -381,11 +410,11 @@ interface ChatMessage {
 - 주문 성공 시 재고와 매출성 지표를 갱신한다.
 - 실제 결제·환불은 Mock 상태로 제한한다.
 
-### 10.6 감사 로그
+### 10.7 감사 로그
 
 최소 기록 대상:
 
-- 방송 시작·종료
+- 방송 생성·수정·일정 등록·준비 완료·취소·시작·종료
 - 상품 노출 변경
 - 쿠폰 발행
 - 공지 발행
@@ -534,8 +563,7 @@ interface RealtimeEvent<TPayload> {
 ### 12.4 public event
 
 ```text
-live.started
-live.ended
+live.status.changed
 product.featured
 coupon.published
 announcement.published
@@ -612,7 +640,11 @@ users
 live_sessions
 - id
 - title
-- status: READY | LIVE | ENDED
+- description nullable
+- thumbnail_url nullable
+- scheduled_start_at nullable, UTC ISO 8601
+- status: DRAFT | SCHEDULED | READY | LIVE | ENDED | CANCELLED
+- created_by_user_id nullable for existing legacy demo rows; new DRAFT에는 필수
 - featured_product_id nullable
 - started_at nullable
 - ended_at nullable
@@ -640,6 +672,10 @@ live_products
 - live_id
 - product_id
 - display_order
+
+constraints
+- unique(live_id, product_id)
+- unique(live_id, display_order)
 ```
 
 ### 13.4 채팅
@@ -780,11 +816,25 @@ body: { role: "VIEWER" | "ADMIN", nickname?: string }
 
 ```text
 GET  /api/v1/lives/:liveId/snapshot
+GET  /api/v1/admin/lives?status=&cursor=
+GET  /api/v1/admin/products?query=&cursor=
+POST /api/v1/admin/lives
+GET  /api/v1/admin/lives/:liveId
+PATCH /api/v1/admin/lives/:liveId
+PUT  /api/v1/admin/lives/:liveId/products
+POST /api/v1/admin/lives/:liveId/schedule
+POST /api/v1/admin/lives/:liveId/prepare
 POST /api/v1/admin/lives/:liveId/start
 POST /api/v1/admin/lives/:liveId/end
-POST /api/v1/admin/lives/:liveId/next-session
-PATCH /api/v1/admin/lives/:liveId/featured-product
+POST /api/v1/admin/lives/:liveId/cancel
+PUT  /api/v1/admin/lives/:liveId/featured-product
 ```
+
+- `POST /admin/lives`는 DRAFT를 만든다. 생성 시 라이브 전용 채팅방도 함께 만들되 사용자에게 노출하지 않는다.
+- `PATCH /admin/lives/:liveId`는 DRAFT 또는 SCHEDULED의 기본 정보만 수정한다.
+- `PUT /admin/lives/:liveId/products`는 연결 상품 ID와 display order 전체를 원자적으로 교체한다.
+- 상태 전이 endpoint는 서버에서 현재 상태·준비 조건·Admin 권한을 확인한다.
+- public snapshot은 SCHEDULED, READY, LIVE, ENDED 상태만 조회할 수 있다. DRAFT와 CANCELLED는 `LIVE_NOT_FOUND`로 처리한다.
 
 ### 14.3 Chat
 
@@ -839,6 +889,7 @@ GET /health
 TanStack Query:
 
 - live snapshot
+- admin live list와 방송 기본 정보
 - products
 - messages pages
 - orders
@@ -911,6 +962,7 @@ MVP는 외부 OAuth보다 테스트 가능한 demo session을 우선한다.
 - 서버가 signed token에 role과 user ID를 넣는다.
 - Socket handshake와 REST API가 동일 token을 검증한다.
 - Admin token 없이는 admin route/API/room을 사용할 수 없다.
+- Viewer token은 DRAFT 또는 CANCELLED 방송의 snapshot, 채팅, 주문을 조회·생성할 수 없다.
 
 ### 17.2 보안 요구사항
 
@@ -968,9 +1020,13 @@ MVP는 외부 OAuth보다 테스트 가능한 demo session을 우선한다.
 
 ### 방송·상품
 
+- `FR-LIVE-00` Admin은 방송 목록에서 상태·제목·예정 시각·시작/종료 시각을 확인할 수 있다. MUST
+- `FR-LIVE-00A` Admin은 제목, 설명, 대표 이미지, 예정 시각을 가진 DRAFT 방송을 만들고 수정할 수 있다. MUST
+- `FR-LIVE-00B` Admin은 DRAFT 또는 SCHEDULED 방송에 판매 가능한 상품을 추가·제거·정렬할 수 있다. MUST
+- `FR-LIVE-00C` 서버는 DRAFT, SCHEDULED, READY, LIVE, ENDED, CANCELLED의 유효한 상태 전이와 Admin 권한을 강제한다. MUST
+- `FR-LIVE-00D` DRAFT와 CANCELLED 방송은 viewer에게 노출하지 않으며, SCHEDULED와 READY 방송에서는 채팅과 주문을 허용하지 않는다. MUST
 - `FR-LIVE-01` Admin은 READY 방송을 시작할 수 있다. MUST
 - `FR-LIVE-02` Admin은 LIVE 방송을 종료할 수 있다. MUST
-- `FR-LIVE-02A` Admin은 종료된 방송을 기준으로 빈 채팅방을 가진 새 READY 방송을 만들 수 있다. 이전 기록은 보존한다. MUST
 - `FR-LIVE-03` Viewer는 방송 상태 변경을 실시간 수신한다. MUST
 - `FR-LIVE-04` Admin은 현재 소개 상품을 선택할 수 있다. MUST
 - `FR-LIVE-05` Viewer는 최신 소개 상품을 실시간·새로고침 후 모두 확인한다. MUST
@@ -1030,7 +1086,8 @@ MVP는 외부 OAuth보다 테스트 가능한 demo session을 우선한다.
 ### 사용자 라이브
 
 - 방송을 찾을 수 없음
-- 방송 시작 전
+- 방송 시작 예정
+- 방송 준비 중
 - 방송 종료
 - Socket 연결 중
 - 무료 서버 cold start
@@ -1044,6 +1101,9 @@ MVP는 외부 OAuth보다 테스트 가능한 demo session을 우선한다.
 ### 운영자
 
 - 권한 없음
+- 방송 목록 없음
+- 방송 초안 생성·수정·저장 중 또는 실패
+- 일정 등록 또는 준비 점검 실패와 복구 방법
 - 방송 데이터 없음
 - 실시간 연결 실패
 - 상품 변경 pending·실패
@@ -1096,23 +1156,26 @@ socket_recovery_failed
 
 ### 22.1 필수 E2E
 
-1. 두 browser context에서 admin 상품 변경이 viewer에 반영된다.
-2. admin 쿠폰 발행이 viewer에 표시되고 서버 가격 계산에 반영된다.
-3. viewer 메시지가 viewer/admin에 한 번씩 표시된다.
-4. 같은 clientMessageId 중복 요청이 한 DB row만 만든다.
-5. Socket 이벤트가 HTTP 응답보다 먼저 와도 메시지가 중복되지 않는다.
-6. offline 동안 발생한 메시지를 reconnect 후 복구한다.
-7. admin이 메시지를 숨기면 viewer에서도 숨겨진다.
-8. viewer가 admin API를 호출하면 거부된다.
-9. 같은 주문 idempotency key를 반복해도 주문은 한 개다.
-10. 한 개 남은 재고를 두 사용자가 동시에 주문하면 한 주문만 성공한다.
-11. AI suggestion은 승인 전 공지로 발행되지 않는다.
-12. 승인된 AI 공지가 viewer에 실시간 표시되고 audit log가 생성된다.
+1. Admin이 방송을 만들고 상품을 준비해 READY로 전환한 뒤 시작하면 viewer 화면이 LIVE가 된다.
+2. DRAFT와 CANCELLED 방송은 viewer가 조회할 수 없고, SCHEDULED와 READY 방송에서는 채팅과 주문이 거부된다.
+3. 두 browser context에서 admin 상품 변경이 viewer에 반영된다.
+4. admin 쿠폰 발행이 viewer에 표시되고 서버 가격 계산에 반영된다.
+5. viewer 메시지가 viewer/admin에 한 번씩 표시된다.
+6. 같은 clientMessageId 중복 요청이 한 DB row만 만든다.
+7. Socket 이벤트가 HTTP 응답보다 먼저 와도 메시지가 중복되지 않는다.
+8. offline 동안 발생한 메시지를 reconnect 후 복구한다.
+9. admin이 메시지를 숨기면 viewer에서도 숨겨진다.
+10. viewer가 admin API를 호출하면 거부된다.
+11. 같은 주문 idempotency key를 반복해도 주문은 한 개다.
+12. 한 개 남은 재고를 두 사용자가 동시에 주문하면 한 주문만 성공한다.
+13. AI suggestion은 승인 전 공지로 발행되지 않는다.
+14. 승인된 AI 공지가 viewer에 실시간 표시되고 audit log가 생성된다.
 
 ### 22.2 필수 단위·통합
 
 - 방송 상태 전이
-- 종료된 방송에서 새 READY 방송 생성과 권한 검증
+- DRAFT 생성·수정, 일정 등록, 준비, 시작, 종료, 취소의 상태 전이와 권한 검증
+- 방송 상품 목록의 유효성·순서·중복 제약
 - 쿠폰 validation과 계산
 - event dedupe와 sequence gap
 - chat message schema
@@ -1137,6 +1200,8 @@ socket_recovery_failed
 
 각 단계는 독립적으로 데모 가능한 세로 흐름이어야 한다.
 
+기능 코드가 일부 존재해도 해당 단계의 수용 기준과 검증을 충족하기 전에는 완료로 간주하지 않는다. 현재 다음 단계는 기존 `demo` 단일 방송 흐름을 여러 방송을 운영하는 구조로 전환하는 일부터 시작한다.
+
 ### Phase 0 — Bootstrap
 
 목표:
@@ -1157,106 +1222,92 @@ socket_recovery_failed
 - `npm run typecheck`
 - 최소 smoke test
 
-### Phase 1 — Static product shell and demo session
+### Phase 1 — 방송 관리와 초안 생성
 
 목표:
 
-- landing
-- viewer/admin route shell
-- demo role session
-- mock live/product data
-- responsive layout와 기본 상태
+- `LiveSession`을 방송 단위 aggregate로 확장하는 Prisma migration
+- `DRAFT | SCHEDULED | READY | LIVE | ENDED | CANCELLED` 계약과 DRAFT 생성·수정·취소 상태 전이
+- Admin 방송 목록, 새 방송 생성, 초안 수정 API와 화면
+- 제목·설명·대표 이미지·예정 시각 입력과 유효성 검사
+- Admin만 방송을 생성·수정·취소하도록 권한 검증과 감사 로그
 
 완료 기준:
 
-- viewer/admin 권한이 구분됨
-- 정적 핵심 화면이 모바일·데스크톱에서 보임
+- `FR-LIVE-00`, `FR-LIVE-00A` 충족
+- DRAFT 생성·수정·취소와 viewer 접근 거부의 단위·통합 테스트
+- `/admin/lives`에서 여러 방송을 구분해 볼 수 있음
 
-### Phase 2 — First realtime vertical slice
+### Phase 2 — 판매 준비와 방송 시작 전 점검
 
 목표:
 
-```text
-Admin featured product 변경
-→ DB 저장
-→ Socket public room event
-→ Viewer 반영
-→ 새로고침·재접속 유지
-```
+- 방송별 상품 연결 테이블과 display order migration
+- 읽기 전용 상품 catalog 조회, 상품 추가·제거·정렬 UI와 원자적 저장 API
+- 판매 가능한 상품·옵션·재고·Mock 영상 준비 상태를 확인하는 준비 점검
+- SCHEDULED → READY 전이와 SCHEDULED/READY 사용자 대기 화면
 
 완료 기준:
 
-- 이 흐름의 통합 테스트와 E2E
-- event envelope, sequence, snapshot 구현
+- `FR-LIVE-00B`~`FR-LIVE-00D` 충족
+- 상품 중복·순서·품절 또는 판매 불가 상태의 서버 검증
+- 준비되지 않은 방송은 시작할 수 없음
 
-### Phase 3 — Reliable chat
+### Phase 3 — 선택한 방송의 실시간 컨트롤룸
 
 목표:
 
-- 최근 50개 조회
-- message POST
-- clientMessageId idempotency
-- Socket 전파
-- optimistic status
-- dedupe
-- before/after sequence pagination
-- reconnect recovery
-- virtualization
-- message hide
+- Admin이 선택한 READY 방송만 컨트롤룸에서 시작·종료
+- 현재 소개 상품 변경, 쿠폰·공지 발행, 재고·최근 주문 표시를 선택된 방송 ID에 연결
+- DB 저장 → Socket public/admin room 발행 → viewer 반영 → 새로고침 유지의 세로 흐름
+- 방송 종료 후 채팅·주문 차단과 과거 이력 보존
 
 완료 기준:
 
-- `FR-CHAT-01`~`FR-CHAT-06`, `FR-CHAT-08`
-- 필수 chat E2E 통과
+- `FR-LIVE-01`~`FR-LIVE-05` 충족
+- Admin이 새 방송을 만들고 시작한 뒤, 두 browser context에서 상품 변경이 viewer에 반영되는 E2E
 
-### Phase 4 — Coupon, order, inventory
+### Phase 4 — 신뢰성 있는 채팅 운영
 
 목표:
 
-- coupon publish
-- viewer coupon
-- Mock order
-- server price calculation
-- idempotency
-- stock transaction
-- order/admin event
+- HTTP 저장 + Socket 전파, `clientMessageId` idempotency, optimistic 상태
+- event ID dedupe, sequence gap 감지, 재연결 누락 복구
+- cursor pagination과 virtualization
+- 메시지 숨김·사용자 timeout·감사 로그
 
 완료 기준:
 
-- 동시 마지막 재고 테스트
-- 중복 주문 테스트
+- `FR-CHAT-01`~`FR-CHAT-08` 충족
+- 채팅 전송·중복·복구·숨김의 Playwright E2E
 
-### Phase 5 — AI product Q&A
+### Phase 5 — 주문·재고와 방송 결과
 
 목표:
 
-- provider interface
-- deterministic Mock provider
-- structured output
-- source display
-- timeout/invalid/retry 상태
-- curated fixtures
+- 쿠폰 발행과 서버 가격 재계산
+- Mock 주문, idempotency, 조건부 재고 차감 transaction
+- viewer 주문 결과 `/orders/[orderId]`와 Admin 주문 목록 `/admin/orders`
+- low-stock 경고와 방송 종료 후 주문·재고 결과 확인
 
 완료 기준:
 
-- 공개 데모가 provider key 없이 동작
-- AI schema/source tests 통과
+- `FR-ORDER-01`~`FR-ORDER-06` 충족
+- 중복 주문과 마지막 재고 동시 주문의 실제 DB 통합 테스트
 
-### Phase 6 — AI admin assistant and audit
+### Phase 6 — AI 보조와 감사 가능한 운영
 
 목표:
 
-- chat batch summary
-- suggestion review
-- edit/approve/reject
-- approved announcement
-- audit log
+- deterministic Mock provider, 상품 Q&A source 표시, 실패·재시도 상태
+- 최근 채팅 요약과 운영자 수정·승인·거절
+- 승인된 공지의 public room 발행과 감사 로그
+- curated fixture 및 AI 출력 계약 검증
 
 완료 기준:
 
-- 승인 전 미발행
-- 승인 후 viewer 실시간 반영
-- audit E2E
+- `FR-AI-01`~`FR-AI-07`, `FR-OPS-02` 충족
+- 승인 전 미발행, 승인 후 viewer 반영, 감사 로그 생성을 포함한 E2E
 
 ### Phase 7 — Quality and deployment
 
@@ -1276,6 +1327,7 @@ Admin featured product 변경
 
 ### P1 — Portfolio differentiators
 
+- 종료 방송 템플릿으로 새 DRAFT를 만드는 빠른 생성 흐름. 채팅·쿠폰·주문·공지·감사 로그는 복사하지 않는다.
 - AI eval dashboard
 - synthetic chat simulator
 - event replay debugging panel

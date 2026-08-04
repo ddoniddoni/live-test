@@ -1,14 +1,10 @@
 'use client';
 
 import { useId } from 'react';
+import Link from 'next/link';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  createOrderRequestSchema,
-  type Coupon,
-  type CreateOrderRequest,
-  type Order,
-  type Product,
-} from '@liveflow/contracts';
+import { createOrderRequestSchema } from '@liveflow/contracts';
+import type { Coupon, CreateOrderRequest, LiveStatus, Order, Product } from '@liveflow/contracts';
 import { useForm, useWatch } from 'react-hook-form';
 
 import { ApiRequestError, createMockOrder, liveSnapshotQueryKey } from '@/lib/live-api';
@@ -27,7 +23,7 @@ type MockOrderFormProps = {
   accessToken: string | null;
   activeCoupon: Coupon | null;
   liveId: string;
-  liveStatus: 'READY' | 'LIVE' | 'ENDED';
+  liveStatus: LiveStatus;
   product: Product;
   variant?: 'default' | 'compact';
 };
@@ -214,6 +210,9 @@ function OrderReceipt({ order }: { order: Order }) {
           <dd>{formatKrw(order.totalKrw)}</dd>
         </div>
       </dl>
+      <Link className="mock-order-receipt-link" href={`/orders/${order.id}`}>
+        주문 결과 보기
+      </Link>
     </div>
   );
 }

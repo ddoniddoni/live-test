@@ -13,6 +13,9 @@ import {
   Req,
 } from '@nestjs/common';
 import {
+  adminLiveListQuerySchema,
+  adminLiveListSchema,
+  adminLiveSessionSchema,
   aiSuggestionListSchema,
   aiSuggestionParamsSchema,
   aiSuggestionSchema,
@@ -29,6 +32,7 @@ import {
   chatTimeoutUserRequestSchema,
   chatUserTimedOutEventSchema,
   createChatMessageRequestSchema,
+  createLiveDraftRequestSchema,
   demoAdminSessionRequestSchema,
   featureProductRequestSchema,
   healthResponseSchema,
@@ -45,15 +49,20 @@ import {
   idempotencyKeySchema,
   inventoryUpdatedEventSchema,
   inventoryLowEventSchema,
+  liveProductListSchema,
   liveSessionSchema,
   adminOrderListSchema,
+  orderParamsSchema,
   orderSchema,
   orderCreatedEventSchema,
   orderStatusChangedEventSchema,
   ordersQuerySchema,
   publishAnnouncementRequestSchema,
   publishCouponRequestSchema,
+  productCatalogSchema,
+  replaceLiveProductsRequestSchema,
   reviewAiSuggestionRequestSchema,
+  updateLiveDraftRequestSchema,
 } from '@liveflow/contracts';
 import type { LiveStatusTransitionAction } from '@liveflow/contracts';
 import type { FastifyRequest } from 'fastify';
@@ -105,6 +114,212 @@ export class LiveController {
 
     this.authService.requireAdminPassword(parsedBody.data.password);
     return this.authService.issueDemoSession('ADMIN', 'demo-admin');
+  }
+
+  @Get('api/v1/admin/lives')
+  async listAdminLives(@Query() query: unknown, @Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedQuery = adminLiveListQuerySchema.safeParse(query);
+
+    if (!parsedQuery.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 목록 조회 조건이 올바르지 않습니다.');
+    }
+
+    return adminLiveListSchema.parse(await this.liveService.listAdminLives(parsedQuery.data));
+  }
+
+  @Get('api/v1/admin/products')
+  async listCatalogProducts(@Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    return productCatalogSchema.parse(await this.liveService.listCatalogProducts());
+  }
+
+  @Get('api/v1/admin/lives/:liveId')
+  async getAdminLive(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const live = await this.liveService.getAdminLive(parsedParams.data.liveId);
+    if (!live) {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return adminLiveSessionSchema.parse(live);
+  }
+
+  @Get('api/v1/admin/lives/:liveId/products')
+  async getLiveProducts(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.getLiveProducts(parsedParams.data.liveId);
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    return liveProductListSchema.parse(result.products);
+  }
+
+  @Put('api/v1/admin/lives/:liveId/products')
+  async replaceLiveProducts(
+    @Param('liveId') liveId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'live-products-replace', 20, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedBody = replaceLiveProductsRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 상품 목록이 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.replaceLiveProducts({
+      actorId: session.userId,
+      liveId: parsedParams.data.liveId,
+      productIds: parsedBody.data.productIds,
+    });
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'live_not_editable') {
+      throw new ApiException(
+        409,
+        'LIVE_PRODUCTS_NOT_EDITABLE',
+        '초안 또는 방송 예정 상태에서만 판매 상품을 변경할 수 있습니다.',
+      );
+    }
+
+    if (result.kind === 'products_not_found') {
+      throw new ApiException(404, 'PRODUCT_NOT_FOUND', '상품 catalog에서 상품을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'product_not_sellable') {
+      throw new ApiException(
+        409,
+        'PRODUCT_NOT_SELLABLE',
+        '옵션 재고가 남아 있는 상품만 방송에 추가할 수 있습니다.',
+      );
+    }
+
+    if (result.featuredProductEvent) {
+      this.liveGateway.publish(result.featuredProductEvent);
+    }
+
+    return liveProductListSchema.parse(result.products);
+  }
+
+  @Post('api/v1/admin/lives')
+  @HttpCode(HttpStatus.CREATED)
+  async createLiveDraft(@Body() body: unknown, @Req() request: FastifyRequest) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'live-draft-create', 10, 60_000);
+    const parsedBody = createLiveDraftRequestSchema.safeParse(body);
+
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 초안 정보를 확인해 주세요.');
+    }
+
+    if (!isFutureScheduledStart(parsedBody.data.scheduledStartAt)) {
+      throw new ApiException(
+        400,
+        'LIVE_SCHEDULED_START_INVALID',
+        '예정 시작 시각은 현재 시각 이후로 설정해 주세요.',
+      );
+    }
+
+    const live = await this.liveService.createLiveDraft({
+      actorId: session.userId,
+      draft: parsedBody.data,
+    });
+
+    return adminLiveSessionSchema.parse(live);
+  }
+
+  @Patch('api/v1/admin/lives/:liveId')
+  async updateLiveDraft(
+    @Param('liveId') liveId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest,
+  ) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'live-draft-update', 20, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const parsedBody = updateLiveDraftRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 초안 정보를 확인해 주세요.');
+    }
+
+    if (!isFutureScheduledStart(parsedBody.data.scheduledStartAt)) {
+      throw new ApiException(
+        400,
+        'LIVE_SCHEDULED_START_INVALID',
+        '예정 시작 시각은 현재 시각 이후로 설정해 주세요.',
+      );
+    }
+
+    const result = await this.liveService.updateLiveDraft({
+      actorId: session.userId,
+      draft: parsedBody.data,
+      liveId: parsedParams.data.liveId,
+    });
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'live_not_editable') {
+      throw new ApiException(
+        409,
+        'LIVE_NOT_EDITABLE',
+        '초안 또는 방송 예정 상태의 방송만 수정할 수 있습니다.',
+      );
+    }
+
+    return adminLiveSessionSchema.parse(result.live);
+  }
+
+  @Post('api/v1/admin/lives/:liveId/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelLiveDraft(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    const session = this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'live-draft-cancel', 10, 60_000);
+    const parsedParams = liveParamsSchema.safeParse({ liveId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '방송 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.cancelLiveDraft({
+      actorId: session.userId,
+      liveId: parsedParams.data.liveId,
+    });
+    if (result.kind === 'live_not_found') {
+      throw new ApiException(404, 'LIVE_NOT_FOUND', '방송을 찾을 수 없습니다.');
+    }
+
+    if (result.kind === 'live_not_cancellable') {
+      throw new ApiException(
+        409,
+        'LIVE_NOT_CANCELLABLE',
+        '시작 전 상태의 방송만 취소할 수 있습니다.',
+      );
+    }
+
+    return adminLiveSessionSchema.parse(result.live);
   }
 
   @Get('api/v1/lives/:liveId/snapshot')
@@ -501,6 +716,33 @@ export class LiveController {
     return orderSchema.parse(result.order);
   }
 
+  @Get('api/v1/orders/:orderId')
+  async getViewerOrder(@Param('orderId') orderId: string, @Req() request: FastifyRequest) {
+    const session = this.authService.requireSession(
+      request.headers.authorization,
+      '주문 결과를 확인하려면 시청자 세션이 필요합니다.',
+    );
+
+    if (session.role !== 'VIEWER') {
+      throw new ApiException(403, 'FORBIDDEN', '시청자 세션으로만 주문 결과를 확인할 수 있습니다.');
+    }
+
+    const parsedParams = orderParamsSchema.safeParse({ orderId });
+    if (!parsedParams.success) {
+      throw new ApiException(400, 'VALIDATION_ERROR', '주문 ID가 올바르지 않습니다.');
+    }
+
+    const result = await this.liveService.getViewerOrder({
+      orderId: parsedParams.data.orderId,
+      userId: session.userId,
+    });
+    if (result.kind === 'order_not_found') {
+      throw new ApiException(404, 'ORDER_NOT_FOUND', '주문을 찾을 수 없습니다.');
+    }
+
+    return orderSchema.parse(result.order);
+  }
+
   @Get('api/v1/admin/lives/:liveId/orders')
   async getRecentOrders(
     @Param('liveId') liveId: string,
@@ -695,6 +937,18 @@ export class LiveController {
     return this.changeLiveStatus(liveId, request, 'START');
   }
 
+  @Post('api/v1/admin/lives/:liveId/schedule')
+  @HttpCode(HttpStatus.OK)
+  async scheduleLive(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    return this.changeLiveStatus(liveId, request, 'SCHEDULE');
+  }
+
+  @Post('api/v1/admin/lives/:liveId/prepare')
+  @HttpCode(HttpStatus.OK)
+  async prepareLive(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
+    return this.changeLiveStatus(liveId, request, 'PREPARE');
+  }
+
   @Post('api/v1/admin/lives/:liveId/next-session')
   @HttpCode(HttpStatus.CREATED)
   async createNextLiveSession(@Param('liveId') liveId: string, @Req() request: FastifyRequest) {
@@ -761,6 +1015,14 @@ export class LiveController {
       throw new ApiException(404, 'PRODUCT_NOT_FOUND', '상품을 찾을 수 없습니다.');
     }
 
+    if (result.kind === 'product_not_available') {
+      throw new ApiException(
+        409,
+        'PRODUCT_NOT_AVAILABLE',
+        '방송에 준비된 상품만 현재 소개 상품으로 선택할 수 있습니다.',
+      );
+    }
+
     this.liveGateway.publish(result.event);
     return result.event;
   }
@@ -791,9 +1053,23 @@ export class LiveController {
       throw new ApiException(
         409,
         'LIVE_STATUS_TRANSITION_INVALID',
-        action === 'START'
-          ? '시작 전 상태의 방송만 시작할 수 있습니다.'
-          : '진행 중인 방송만 종료할 수 있습니다.',
+        getInvalidStatusTransitionMessage(action),
+      );
+    }
+
+    if (result.kind === 'schedule_requirements_not_met') {
+      throw new ApiException(
+        409,
+        'LIVE_SCHEDULE_REQUIREMENTS_NOT_MET',
+        '예정 시작 시각과 판매 상품을 설정한 초안만 방송 예정으로 전환할 수 있습니다.',
+      );
+    }
+
+    if (result.kind === 'preparation_requirements_not_met') {
+      throw new ApiException(
+        409,
+        'LIVE_PREPARATION_REQUIREMENTS_NOT_MET',
+        '옵션 재고가 남아 있는 판매 상품을 준비한 뒤 방송 준비를 완료해 주세요.',
       );
     }
 
@@ -813,4 +1089,19 @@ export class LiveController {
       windowMs,
     });
   }
+}
+
+function isFutureScheduledStart(value: string): boolean {
+  return new Date(value).getTime() > Date.now();
+}
+
+function getInvalidStatusTransitionMessage(action: LiveStatusTransitionAction): string {
+  const messages: Record<LiveStatusTransitionAction, string> = {
+    SCHEDULE: '초안 상태의 방송만 방송 예정으로 전환할 수 있습니다.',
+    PREPARE: '방송 예정 상태의 방송만 준비 완료로 전환할 수 있습니다.',
+    START: '준비 완료 상태의 방송만 시작할 수 있습니다.',
+    END: '진행 중인 방송만 종료할 수 있습니다.',
+  };
+
+  return messages[action];
 }

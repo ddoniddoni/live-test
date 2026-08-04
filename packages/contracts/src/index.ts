@@ -3,10 +3,17 @@ import { z } from 'zod';
 export const roleSchema = z.enum(['VIEWER', 'ADMIN']);
 export type Role = z.infer<typeof roleSchema>;
 
-export const liveStatusSchema = z.enum(['READY', 'LIVE', 'ENDED']);
+export const liveStatusSchema = z.enum([
+  'DRAFT',
+  'SCHEDULED',
+  'READY',
+  'LIVE',
+  'ENDED',
+  'CANCELLED',
+]);
 export type LiveStatus = z.infer<typeof liveStatusSchema>;
 
-export const liveStatusTransitionActionSchema = z.enum(['START', 'END']);
+export const liveStatusTransitionActionSchema = z.enum(['SCHEDULE', 'PREPARE', 'START', 'END']);
 export type LiveStatusTransitionAction = z.infer<typeof liveStatusTransitionActionSchema>;
 
 export const apiErrorSchema = z.object({
@@ -45,6 +52,31 @@ export const productSchema = z.object({
   variants: z.array(productVariantSchema),
 });
 export type Product = z.infer<typeof productSchema>;
+export const productCatalogSchema = z.array(productSchema);
+
+export const liveProductSchema = z.object({
+  liveId: liveIdSchema,
+  product: productSchema,
+  displayOrder: z.int().nonnegative(),
+});
+export type LiveProduct = z.infer<typeof liveProductSchema>;
+
+export const liveProductListSchema = z.array(liveProductSchema);
+
+export const replaceLiveProductsRequestSchema = z
+  .object({
+    productIds: z.array(z.string().min(1).max(64)).min(1).max(20),
+  })
+  .superRefine((input, context) => {
+    if (new Set(input.productIds).size !== input.productIds.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['productIds'],
+        message: '같은 상품을 방송에 중복으로 추가할 수 없습니다.',
+      });
+    }
+  });
+export type ReplaceLiveProductsRequest = z.infer<typeof replaceLiveProductsRequestSchema>;
 
 export const couponDiscountTypeSchema = z.enum(['PERCENT', 'FIXED']);
 export type CouponDiscountType = z.infer<typeof couponDiscountTypeSchema>;
@@ -68,6 +100,11 @@ export type Coupon = z.infer<typeof couponSchema>;
 
 export const orderStatusSchema = z.enum(['PENDING', 'PAID', 'FAILED', 'CANCELLED']);
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
+
+export const orderIdSchema = z.string().min(1).max(64);
+export const orderParamsSchema = z.object({
+  orderId: orderIdSchema,
+});
 
 export const orderItemSchema = z.object({
   id: z.string().min(1),
@@ -120,6 +157,53 @@ export type LiveSession = z.infer<typeof liveSessionSchema>;
 
 export const createNextLiveSessionResponseSchema = liveSessionSchema;
 export type CreateNextLiveSessionResponse = z.infer<typeof createNextLiveSessionResponseSchema>;
+
+const liveTitleSchema = z
+  .string()
+  .trim()
+  .min(1, '방송 제목을 입력해 주세요.')
+  .max(100, '방송 제목은 100자 이하로 입력해 주세요.');
+const liveDescriptionSchema = z
+  .string()
+  .trim()
+  .min(1, '방송 설명을 입력해 주세요.')
+  .max(500, '방송 설명은 500자 이하로 입력해 주세요.');
+const liveThumbnailUrlSchema = z
+  .string()
+  .url('대표 이미지 URL 형식이 올바르지 않습니다.')
+  .max(2048, '대표 이미지 URL은 2,048자 이하로 입력해 주세요.');
+
+export const createLiveDraftRequestSchema = z.object({
+  title: liveTitleSchema,
+  description: liveDescriptionSchema,
+  thumbnailUrl: liveThumbnailUrlSchema.optional(),
+  scheduledStartAt: z.iso.datetime(),
+});
+export type CreateLiveDraftRequest = z.infer<typeof createLiveDraftRequestSchema>;
+
+export const updateLiveDraftRequestSchema = createLiveDraftRequestSchema;
+export type UpdateLiveDraftRequest = z.infer<typeof updateLiveDraftRequestSchema>;
+
+export const adminLiveSessionSchema = liveSessionSchema.extend({
+  description: z.string().max(500).nullable(),
+  thumbnailUrl: z.string().url().max(2048).nullable(),
+  scheduledStartAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type AdminLiveSession = z.infer<typeof adminLiveSessionSchema>;
+
+export const adminLiveListQuerySchema = z.object({
+  cursor: liveIdSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  status: liveStatusSchema.optional(),
+});
+export type AdminLiveListQuery = z.infer<typeof adminLiveListQuerySchema>;
+
+export const adminLiveListSchema = z.object({
+  lives: z.array(adminLiveSessionSchema),
+  nextCursor: liveIdSchema.nullable(),
+});
+export type AdminLiveList = z.infer<typeof adminLiveListSchema>;
 
 export const chatMessageTypeSchema = z.enum(['USER', 'ADMIN', 'SYSTEM']);
 export type ChatMessageType = z.infer<typeof chatMessageTypeSchema>;
