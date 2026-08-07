@@ -40,6 +40,11 @@ body {
   color: var(--flow-navy);
 }
 
+html:has(.screen-state),
+body:has(.screen-state) {
+  background: #0b1326;
+}
+
 a {
   color: inherit;
 }
@@ -115,6 +120,7 @@ h4,
   --screen-state-mint: #4edea3;
   display: grid;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 32px;
   place-items: center;
   overflow: hidden;
