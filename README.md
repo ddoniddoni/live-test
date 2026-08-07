@@ -1,22 +1,109 @@
-# LiveFlow
+# LiveFlow를 만들며
 
-LiveFlow는 사용자 라이브 쇼핑 화면과 운영자 컨트롤룸을 실시간으로 연결하는 AI 기반
-라이브커머스 포트폴리오 프로젝트입니다. 현재는 상품 노출, 신뢰성 있는 채팅, Mock 주문과 재고 차감의
-세로 흐름을 구현했습니다.
+라이브커머스를 보다 보면 화면은 보통 둘로 나뉜다. 시청자는 방송을 보며 상품을 고르고, 운영자는 다른
+화면에서 상품을 바꾸고 쿠폰과 채팅을 관리한다. 처음에는 이 두 화면을 만들고 Socket.IO만 연결하면 될
+거라고 생각했다.
 
-## Workspace
+막상 구현해 보니 중요한 것은 화면 두 장이 아니라 **같은 방송 상태를 어떻게 믿을 수 있게 공유하느냐**였다.
+상품을 바꾼 뒤 새로고침해도 같은 상품이 보여야 하고, 채팅을 두 번 보내도 한 번만 저장돼야 한다. 주문과
+재고는 버튼을 눌렀다는 사실보다 DB transaction이 더 중요했다. LiveFlow는 그 고민을 정리해 본 개인
+포트폴리오 프로젝트다.
+
+> 실제 영상 송출과 결제를 만들기보다, 한 방송을 준비하고 운영한 뒤 결과를 확인하는 흐름을 끝까지
+> 연결하는 데 집중했다.
+
+## 어떤 흐름을 만들었나
 
 ```text
-apps/web                 Next.js 사용자·운영자 웹 앱
-apps/server              NestJS REST API + Socket.IO Gateway 서버 (Fastify adapter)
-packages/contracts       Zod 기반 공유 DTO와 API 계약
-packages/database        Prisma 스키마와 데이터베이스 클라이언트
+운영자가 방송을 만들고 준비한다
+  → 방송을 시작하고 현재 소개 상품을 바꾼다
+  → 시청자 화면이 실시간으로 갱신된다
+  → 채팅 · 쿠폰 · Mock 주문이 DB에 저장된다
+  → 운영자는 주문 · 재고 · 채팅 · AI 제안을 확인한다
+  → 중요한 AI 제안은 사람이 승인한 뒤에만 공지가 된다
 ```
 
-## 시작하기
+방송은 `DRAFT → SCHEDULED → READY → LIVE → ENDED` 상태로 관리한다. 준비 중인 방송에서는
+시청자가 채팅하거나 주문할 수 없고, 종료된 방송은 새 방송으로 되돌아가지 않는다. 이 규칙은 화면이 아닌
+NestJS 서버에서 검사한다.
 
-Node.js 24.14.1 LTS와 npm 11 이상을 사용합니다. 현재 개발 셸이 다른 Node 버전이면 `nvm use`
-후 다음을 실행합니다.
+## 구현하면서 신경 쓴 부분
+
+### 1. Socket은 전달 통로이고, PostgreSQL이 기준이다
+
+운영자가 상품을 노출하거나 공지를 발행하면 먼저 PostgreSQL transaction을 완료한다. 그 다음에만
+Socket.IO 이벤트를 보낸다. 따라서 이벤트를 놓치거나 새로고침하더라도 HTTP snapshot으로 현재 상태를
+다시 읽을 수 있다.
+
+채팅에는 `clientMessageId`, 이벤트에는 `eventId`와 방송별 `sequence`를 둬서 HTTP 응답과 Socket
+이벤트 순서가 달라도 중복되지 않게 했다. 연결이 끊긴 뒤에는 마지막 sequence 이후 메시지를 가져와 복구한다.
+
+### 2. 주문은 화면에서 계산하지 않는다
+
+시청자가 옵션과 수량, 쿠폰을 선택해 Mock 주문을 만들 수 있다. 서버는 가격과 할인 금액을 다시 계산하고,
+재고 차감·쿠폰 사용·주문 생성·감사 로그를 하나의 transaction으로 처리한다. 같은 idempotency key로
+다시 요청해도 주문은 하나만 생긴다.
+
+결제, 환불, 배송 연동은 이 프로젝트의 범위에서 제외했다. 대신 "마지막 재고를 동시에 주문하면 어떻게
+될까"처럼 서버와 DB가 책임져야 하는 부분을 다뤘다.
+
+### 3. 운영자가 판단할 수 있는 AI만 붙였다
+
+사용자는 현재 소개 상품을 대상으로 질문하고, AI는 답변과 함께 근거 source를 돌려준다. 운영자는 최근
+채팅을 요약해 반복 질문을 확인할 수 있다.
+
+다만 AI가 쿠폰을 발행하거나 공지를 자동으로 내보내지는 않는다. 요약으로 만든 공지 초안은 운영자가
+수정·승인해야만 시청자 화면에 발행되고, 그 과정은 감사 로그에 남는다. 기본 AI provider는 비용이 들지 않는
+deterministic mock이고, 출력 contract와 curated fixture로 동작을 검증한다.
+
+### 4. 운영 화면도 제품의 일부로 봤다
+
+운영자는 방송 목록에서 새 방송을 만들고, 상품을 방송별로 준비·정렬한 뒤 준비 점검을 통과시켜야 방송을
+시작할 수 있다. 컨트롤룸에서는 상품 노출, 쿠폰·공지 발행, 채팅 숨김·timeout, 주문·재고 확인, AI 제안
+검토를 한다.
+
+방송 중 지표도 함께 보여 준다. 주문 수·매출·할인 금액·쿠폰 사용·채팅 수·AI 검토 수를 한 화면에서
+확인할 수 있게 했다.
+
+### 5. "데모니까 괜찮다"고 넘기지 않은 보안 경계
+
+브라우저는 Supabase에 직접 연결하지 않고 NestJS와 Prisma를 거친다. Supabase Data API는 비활성화하고,
+`public` 테이블에는 RLS를 켠 뒤 `anon`·`authenticated` 역할의 스키마·테이블 권한을 회수했다. 관리자
+API와 admin Socket room은 서버에서 별도로 권한을 확인한다.
+
+## 화면을 보는 순서
+
+1. `/`에서 현재 진행 중인 방송 또는 데모 진입 경로를 확인한다.
+2. `/live`는 가장 최근에 시작된 LIVE 방송으로 이동한다.
+3. `/admin`에서 관리자 비밀번호를 입력한 뒤 방송 목록으로 들어간다.
+4. `/admin/lives`에서 방송을 만들고 상품을 준비한 다음 컨트롤룸에서 방송을 시작한다.
+5. 시청자 화면과 운영자 화면을 나란히 열고 상품 노출, 쿠폰, 채팅, Mock 주문 흐름을 확인한다.
+
+현재 라이브 조회가 일시적으로 실패해도 `/live` 오류 화면에서 재시도하거나 홈·운영자 화면으로 이동할 수
+있다.
+
+## 구조
+
+```text
+apps/web                 Next.js App Router 사용자·운영자 화면
+apps/server              NestJS REST API + Socket.IO Gateway (Fastify adapter)
+packages/contracts       Zod 기반 API·Socket 공유 계약
+packages/database        Prisma schema, migration, seed, DB client
+```
+
+```text
+Next.js
+  ├─ HTTP snapshot / mutation ─┐
+  └─ Socket.IO                 ├─ NestJS + Fastify
+                                └─ Prisma → Supabase PostgreSQL
+```
+
+공유 타입을 프런트와 서버에 복사하지 않기 위해 계약은 `packages/contracts`에 둔다. DB가 사실의 기준이고,
+Socket.IO는 이미 저장된 변경을 전달하는 역할만 한다.
+
+## 로컬에서 실행하기
+
+Node.js `24.14.1`과 npm을 사용한다. 다른 Node 버전이 선택돼 있다면 먼저 `nvm use`를 실행한다.
 
 ```bash
 cp .env.example .env
@@ -27,27 +114,26 @@ npm run db:seed
 npm run dev
 ```
 
-시작 전에 Supabase development project를 만들고, Dashboard의 **Connect** 화면에서 가져온 서버용
-connection string 두 개를 `.env`에 설정합니다.
+Supabase Dashboard의 **Connect** 화면에서 받은 서버용 connection string을 `.env`에 넣는다.
 
-- `DATABASE_URL`: NestJS 런타임용 Transaction Pooler URL (보통 6543 포트, `pgbouncer=true`)
-- `DIRECT_URL`: Prisma migration용 Session Pooler URL (보통 5432 포트)
+```text
+DATABASE_URL=       # NestJS 런타임용 Transaction Pooler URL
+DIRECT_URL=         # Prisma migration용 Session Pooler URL
+JWT_SECRET=
+DEMO_ADMIN_PASSWORD=
+WEB_ORIGIN=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
+AI_MODE=mock
+```
 
-현재 애플리케이션은 NestJS + Prisma만 DB에 연결하므로 Supabase Data API를 켜거나 브라우저에
-Supabase secret을 넣지 않습니다. `npm run db:migrate`와 `npm run db:seed`는 루트 `.env`를
-자동으로 로드합니다. Docker Compose는 로컬 PostgreSQL이 꼭 필요한 경우에만 쓰는 선택 사항입니다.
+`npm run dev`는 웹(`http://localhost:3000`)과 API(`http://localhost:4000`)를 함께 실행한다. API 상태는
+`http://localhost:4000/health`에서 확인할 수 있다.
 
-- Web: `http://localhost:3000`
-- API health check: `http://localhost:4000/health`
+Supabase Data API는 이 구조에서 사용하지 않는다. Dashboard에서 Data API를 비활성화하고, 실제 URL이나
+비밀번호, API key는 저장소에 넣지 않는다.
 
-`npm run dev`는 Next.js와 NestJS를 함께 시작합니다. 분리 실행은 `npm run dev:web`,
-`npm run dev:server`를 사용합니다.
-
-`DEMO_ADMIN_PASSWORD`에는 임의의 강한 비밀번호를 설정하세요. `/admin/lives/demo`에서 해당
-비밀번호로 데모 관리자 세션을 발급받아 상품을 노출할 수 있습니다. 이 세션은 포트폴리오용
-데모 인증이며, 실제 사용자 인증은 아직 구현하지 않았습니다.
-
-## 검증 명령
+## 확인한 것
 
 ```bash
 npm run lint
@@ -57,118 +143,32 @@ npm run format:check
 npm run build
 ```
 
-데이터베이스가 필요한 명령은 아래와 같습니다.
+`npm run db:seed`는 `demo` 방송에 결정적인 2,000개 채팅 메시지를 만든다. 채팅은 cursor pagination과
+virtualization을 사용하며, 사용자가 과거 메시지를 읽는 중일 때 새 메시지로 강제 이동하지 않는다.
 
-```bash
-npm run db:generate
-npm run db:migrate
-npm run db:seed
-```
-
-`db:migrate:reset`은 로컬 DB 데이터를 삭제하므로 필요할 때만 실행합니다.
-
-## E2E 테스트
-
-Playwright E2E는 개발·운영 DB를 절대 사용하지 않습니다. 별도의 Supabase test project를 만들고
-`.env.e2e.example`을 `.env.e2e`로 복사한 뒤, test project의 connection string과 전용 관리자
-비밀번호를 입력하세요.
+Playwright E2E는 별도 Supabase test project가 필요하다. `.env.e2e.example`을 `.env.e2e`로 복사해
+전용 connection string을 넣고 아래처럼 실행한다.
 
 ```bash
 npx playwright install chromium
 npm run test:e2e
 ```
 
-이 명령은 `E2E_ALLOW_DATABASE_RESET=true`가 설정된 경우에만 실행됩니다. 실행마다 **E2E 전용 DB**에
-Prisma generate, migration, seed를 적용하고 포트 `3100`(web), `4100`(API)에서 Chromium 시나리오를
-실행합니다. 현재 시나리오는 운영자 방송 시작·상품 노출, 시청자 채팅·Mock 주문, 운영자의 주문·저재고
-실시간 수신을 두 브라우저 context로 검증합니다.
+이 테스트는 `E2E_ALLOW_DATABASE_RESET=true`인 전용 DB만 초기화한다. 개발·운영 DB에는 실행하면 안 된다.
 
-## 채팅 성능 검증
+## 아직 하지 않은 것
 
-`npm run db:seed`는 `demo` 방송에 결정적인 2,000개 채팅 메시지를 생성합니다. 서버 snapshot과 이전
-메시지 API는 한 번에 최대 51개만 조회하고, 클라이언트는 TanStack Virtual로 가시 행만 DOM에 렌더링합니다.
-E2E 시나리오는 초기 렌더링 행이 100개 미만인지 확인합니다.
+- 실제 HLS/WebRTC 송출과 영상 인코딩
+- 실제 결제·환불·배송·정산 연동
+- 실제 회원 가입과 OAuth 기반 사용자 인증
+- 다중 Socket 서버를 위한 Redis adapter
+- 운영자 AI 평가 대시보드, 이벤트 재생 패널 같은 P1 확장 기능
 
-성능을 재현하려면 전용 테스트 DB에서 `npm run test:e2e`를 실행한 뒤 `/live/demo`의 채팅 목록을 위로
-스크롤해 이전 메시지를 반복해서 불러오면 됩니다. 실제 브라우저 성능 수치는 전용 E2E Supabase 환경을
-연결한 뒤 기록합니다.
+공개 배포는 Vercel(웹), Render 계열 단일 Web Service(API·Socket), Supabase PostgreSQL 조합을 기준으로
+생각하고 있다. Render의 free-tier cold start와 단일 Socket 인스턴스라는 제약도 숨기지 않고 데모 흐름에
+반영할 계획이다.
 
-## 현재 구현 범위
+## 기록
 
-현재 확인 가능한 흐름은 다음과 같습니다.
-
-1. `/live/demo`에서 시청자 화면과 현재 소개 상품을 확인합니다.
-2. `/admin/lives/demo`에서 `DEMO_ADMIN_PASSWORD`로 관리자 세션을 발급받습니다.
-3. 상품을 선택하면 서버가 PostgreSQL transaction 안에서 방송 상태, event sequence, audit log를
-   저장합니다.
-4. transaction이 commit된 뒤 `product.featured` Socket.IO 이벤트가 public room에 발행되고,
-   시청자 화면의 Query cache가 갱신됩니다.
-5. 재접속·새로고침 시 HTTP snapshot이 DB의 최신 소개 상품을 다시 읽습니다.
-
-방송 화면은 실제 영상 파일 없이도 `startedAt`을 기준으로 30분 루프 Mock live 재생 위치를 표시합니다.
-채팅은 최근 메시지 조회, HTTP 저장, `clientMessageId` idempotency, optimistic 상태, Socket.IO 전파,
-HTTP/Socket dedupe, `afterSequence` 복구까지 구현했습니다. 관리자는 사유를 입력해 메시지를 숨기거나
-시청자를 5·10·30·60분 동안 채팅 제한할 수 있습니다. timeout은 방송 단위로 영속화·감사되며, 대상
-시청자에게만 Socket.IO 이벤트로 전달됩니다. 메시지 전송 API도 제한 만료 전에는 거절하므로 UI를 우회할 수
-없습니다. 이전 메시지 UI, cursor 기반 이전 메시지 조회, 읽던 위치 보존, 대량 목록 virtualization, 최신 위치가
-아닐 때의 새 메시지 이동 버튼까지 구현했습니다. 관리자는 퍼센트·정액 쿠폰을 유효 기간, 최소 주문 금액, 사용 한도와 함께 발행할 수 있고, 발행된 쿠폰은 시청자 화면에 실시간 반영됩니다. 시청자는 현재 소개 중인 상품의 옵션과 수량을 선택해 Mock 주문을 만들 수 있습니다. 서버는 가격·쿠폰을 재계산하고, 조건부 재고 차감·쿠폰 사용·주문·감사 로그를 하나의 transaction으로 저장한 뒤 public 재고 이벤트와 주문자 전용 상태 이벤트를 발행합니다. 같은 `Idempotency-Key` 재시도는 주문을 한 번만 만듭니다. 실제 결제와 실제 사용자 인증, AI 기능은 후속 범위입니다.
-
-## 포트폴리오 배포
-
-```text
-Vercel (apps/web, Next.js)
-  ├─ HTTPS API ─┐
-  └─ Socket.IO ─┼─ Render Web Service (NestJS + Fastify adapter)
-                └─ Supabase PostgreSQL (Prisma)
-```
-
-### 1. Supabase
-
-Supabase Dashboard의 Connect 화면에서 서버용 `DATABASE_URL`(Transaction Pooler)과 migration용
-`DIRECT_URL`(Session Pooler)을 준비합니다. 첫 공개 배포 전에는 로컬에서 다음을 한 번 실행합니다.
-
-```bash
-npm run db:migrate
-npm run db:seed
-```
-
-배포 환경에서는 Render의 pre-deploy 단계가 `npm run db:migrate`를 실행합니다. 이 명령은 로컬의
-`.env`가 있으면 읽고, 없으면 Render 환경변수를 그대로 사용합니다. 서버 시작 시 migration이나
-seed를 실행하지 않습니다.
-
-### 2. Render API와 Socket
-
-저장소 루트의 [`render.yaml`](./render.yaml)을 이용해 Render에서 **New + Blueprint**를 만들고
-`develop` 브랜치를 연결합니다. 이 Blueprint는 무료 Web Service 한 대에 NestJS API와 Socket.IO를
-같이 기동하며 `/health`를 배포 health check로 사용합니다.
-
-Render Dashboard에서 아래 값을 설정합니다. `JWT_SECRET`은 Blueprint가 최초 생성 시 안전한 난수로
-만들며, 나머지 실제 값은 저장소에 넣지 않습니다.
-
-```text
-DATABASE_URL, DIRECT_URL, DEMO_ADMIN_PASSWORD, WEB_ORIGIN
-```
-
-`WEB_ORIGIN`에는 다음 단계에서 얻은 Vercel production URL을 넣습니다. Render의 공개 URL은 예를 들어
-`https://liveflow-api.onrender.com`이며 API와 Socket.IO가 이 URL을 함께 사용합니다. Free Web Service는
-15분 동안 HTTP 요청과 Socket 메시지가 없으면 sleep하므로, 포트폴리오 시연 전에는 `/health`를 한 번
-열어 cold start를 끝냅니다.
-
-### 3. Vercel 웹
-
-같은 저장소에서 Vercel Project를 만들고, Root Directory는 **저장소 루트**로 둡니다.
-[`vercel.json`](./vercel.json)이 npm workspace install과 web-only build를 설정합니다. Vercel 환경변수는
-다음처럼 설정합니다.
-
-```text
-NEXT_PUBLIC_API_URL=https://liveflow-api.onrender.com
-NEXT_PUBLIC_SOCKET_URL=https://liveflow-api.onrender.com
-```
-
-Vercel 배포 URL을 만든 뒤 이를 Render의 `WEB_ORIGIN`에 넣고 Render를 재배포합니다. Preview URL은
-allowlist에 자동 포함되지 않으므로, 공개 시연은 production URL을 사용합니다.
-
-API와 Socket은 Render 단일 인스턴스가 기준입니다. 인스턴스를 여러 대로 확장하려면 Socket.IO Redis
-adapter를 먼저 도입해야 합니다.
-
-요구사항과 작업 규칙의 기준은 [prd.md](./prd.md)와 [AGENTS.md](./AGENTS.md)입니다.
+기술 선택의 이유는 [docs/adr](./docs/adr)에, 제품 요구사항과 완료 기준은 [prd.md](./prd.md)에 적어
+두었다. 작업할 때 지키는 규칙은 [AGENTS.md](./AGENTS.md)에서 확인할 수 있다.
