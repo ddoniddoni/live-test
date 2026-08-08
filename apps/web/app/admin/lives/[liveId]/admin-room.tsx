@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   InventoryLowEvent,
@@ -17,8 +18,10 @@ import { CouponPublishForm } from '@/components/coupon-publish-form';
 import { ScreenState } from '@/components/screen-state';
 import {
   ApiRequestError,
+  adminLiveListQueryKey,
   aiSuggestionsQueryKey,
   createAiChatSummary,
+  createNextLiveSession,
   endLive,
   featureProduct,
   fetchAiSuggestions,
@@ -65,6 +68,7 @@ function connectionLabel(connectionState: ConnectionState): string {
 }
 
 export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const activeLiveId = liveId;
   const snapshotQuery = useQuery({
@@ -111,6 +115,13 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
       queryClient.setQueryData<LiveSnapshot>(liveSnapshotQueryKey(activeLiveId), (snapshot) =>
         mergeLiveStatusChangedEvent(snapshot, event),
       );
+    },
+  });
+  const createNextSessionMutation = useMutation({
+    mutationFn: () => createNextLiveSession(activeLiveId, accessToken),
+    onSuccess: async (live) => {
+      await queryClient.invalidateQueries({ queryKey: adminLiveListQueryKey() });
+      router.replace(`/admin/lives?edit=${live.id}`);
     },
   });
   const hideMessageMutation = useMutation({
@@ -316,7 +327,16 @@ export function AdminRoom({ liveId, accessToken }: { liveId: string; accessToken
                       : '방송 상태를 변경하지 못했습니다. 다시 시도해 주세요.'
                     : null
                 }
+                isCreatingNextSession={createNextSessionMutation.isPending}
                 isPending={broadcastMutation.isPending}
+                nextSessionError={
+                  createNextSessionMutation.isError
+                    ? createNextSessionMutation.error instanceof Error
+                      ? createNextSessionMutation.error.message
+                      : '새 방송 초안을 만들지 못했습니다. 다시 시도해 주세요.'
+                    : null
+                }
+                onCreateNextSession={() => createNextSessionMutation.mutate()}
                 onEnd={() => broadcastMutation.mutate('END')}
                 onStart={() => broadcastMutation.mutate('START')}
                 status={snapshot.live.status}

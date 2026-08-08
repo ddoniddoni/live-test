@@ -21,6 +21,7 @@ import {
   aiSuggestionListSchema,
   aiSuggestionParamsSchema,
   aiSuggestionSchema,
+  aiProductAnswerEvaluationReportSchema,
   announcementPublishedEventSchema,
   auditLogPageSchema,
   auditLogsQuerySchema,
@@ -536,6 +537,28 @@ export class LiveController {
     }
 
     return aiSuggestionListSchema.parse(result.suggestions);
+  }
+
+  @Get('api/v1/admin/ai-evals/product-answers')
+  getProductAnswerEvaluations(@Req() request: FastifyRequest) {
+    this.authService.requireAdmin(request.headers.authorization);
+    this.consumeRateLimit(request, 'ai-product-answer-evaluations', 10, 60_000);
+
+    try {
+      return aiProductAnswerEvaluationReportSchema.parse(
+        this.liveService.evaluateProductAnswerFixtures(),
+      );
+    } catch (error: unknown) {
+      if (error instanceof AiProviderUnavailableError) {
+        throw new ApiException(
+          503,
+          'AI_PROVIDER_UNAVAILABLE',
+          'AI 평가 결과를 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+      }
+
+      throw error;
+    }
   }
 
   @Get('api/v1/admin/lives/:liveId/audit-logs')

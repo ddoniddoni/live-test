@@ -62,7 +62,7 @@ const demoSnapshot: LiveSnapshot = {
 const nextLiveSession: LiveSnapshot['live'] = {
   id: 'next-demo',
   title: 'LiveFlow 데모 방송',
-  status: 'READY',
+  status: 'DRAFT',
   startedAt: null,
   endedAt: null,
 };
@@ -574,6 +574,39 @@ describe('GET /api/v1/lives/current', () => {
   });
 });
 
+describe('GET /api/v1/admin/ai-evals/product-answers', () => {
+  it('returns the curated mock evaluation report to administrators only', async () => {
+    const app = await buildServer();
+    servers.push(app);
+    const adminToken = issueAccessToken(app, 'ADMIN', 'demo-admin');
+    const viewerToken = issueAccessToken(app, 'VIEWER', 'demo-viewer');
+
+    const deniedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/ai-evals/product-answers',
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    const grantedResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/admin/ai-evals/product-answers',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(grantedResponse.statusCode).toBe(200);
+    expect(grantedResponse.json()).toMatchObject({
+      provider: 'mock',
+      modelOrMockVersion: 'mock-product-answer-v1',
+      totalCases: 20,
+      passedCaseCount: 20,
+      schemaValidCaseCount: 20,
+      sourceMatchedCaseCount: 20,
+      humanReviewMatchedCaseCount: 20,
+      failureCounts: [],
+    });
+  });
+});
+
 describe('GET /api/v1/admin/lives/:liveId/metrics', () => {
   it('returns saved broadcast metrics only to an admin session', async () => {
     const liveRepository = createLiveRepository();
@@ -972,7 +1005,7 @@ describe('live product routes', () => {
     expect(publishRealtimeEvent).not.toHaveBeenCalled();
   });
 
-  it('allows an admin to create a fresh ready session without publishing it to an existing room', async () => {
+  it('allows an admin to create a draft from an ended broadcast without publishing it to an existing room', async () => {
     const liveRepository = createLiveRepository();
     const app = await buildServer({ liveRepository });
     servers.push(app);

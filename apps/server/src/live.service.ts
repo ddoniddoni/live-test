@@ -166,6 +166,10 @@ export class LiveService {
     return this.liveRepository.getAiSuggestions(liveId);
   }
 
+  evaluateProductAnswerFixtures() {
+    return this.aiService.evaluateProductAnswerFixtures();
+  }
+
   async createChatSummarySuggestion(input: {
     liveId: string;
     actorId: string;

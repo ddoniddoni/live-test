@@ -3,6 +3,7 @@ import {
   adminLiveSessionSchema,
   adminOrderPageSchema,
   adminOrdersQuerySchema,
+  aiProductAnswerEvaluationReportSchema,
   aiSuggestionListSchema,
   aiSuggestionSchema,
   aiProductAnswerSchema,
@@ -43,6 +44,7 @@ import type {
   AdminLiveSession,
   AdminOrderPage,
   AdminOrdersQuery,
+  AiProductAnswerEvaluationReport,
   ApiErrorResponse,
   AiSuggestion,
   AiProductAnswer,
@@ -130,6 +132,14 @@ export function chatAccessQueryKey(liveId: string): readonly ['live', string, 'c
 
 export function aiSuggestionsQueryKey(liveId: string): readonly ['live', string, 'ai-suggestions'] {
   return ['live', liveId, 'ai-suggestions'];
+}
+
+export function aiProductAnswerEvaluationQueryKey(): readonly [
+  'admin',
+  'ai-evaluations',
+  'product-answers',
+] {
+  return ['admin', 'ai-evaluations', 'product-answers'];
 }
 
 export function auditLogsQueryKey(liveId: string): readonly ['live', string, 'audit-logs'] {
@@ -495,6 +505,17 @@ export async function fetchAiSuggestions(
     }),
   );
   return aiSuggestionListSchema.parse(body);
+}
+
+export async function fetchAiProductAnswerEvaluations(
+  accessToken: string,
+): Promise<AiProductAnswerEvaluationReport> {
+  const body = await readResponse(
+    await fetch(getApiUrl('/api/v1/admin/ai-evals/product-answers'), {
+      headers: { authorization: `Bearer ${accessToken}` },
+    }),
+  );
+  return aiProductAnswerEvaluationReportSchema.parse(body);
 }
 
 export async function fetchAuditLogs(

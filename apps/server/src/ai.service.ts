@@ -8,6 +8,7 @@ import type {
   Product,
 } from '@liveflow/contracts';
 
+import { evaluateProductAnswerFixtures } from './ai-product-answer-evaluator.js';
 import { LIVEFLOW_CONFIGURATION, type LiveFlowConfiguration } from './server-configuration.js';
 
 export class AiProviderUnavailableError extends Error {
@@ -211,6 +212,14 @@ export class AiService {
     }
 
     return createMockChatSummary(messages, product);
+  }
+
+  evaluateProductAnswerFixtures() {
+    if (this.configuration.aiMode !== 'mock') {
+      throw new AiProviderUnavailableError();
+    }
+
+    return evaluateProductAnswerFixtures(createMockProductAnswer);
   }
 }
 

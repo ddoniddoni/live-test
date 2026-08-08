@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage, Product } from '@liveflow/contracts';
 
+import { evaluateProductAnswerFixtures } from './ai-product-answer-evaluator.js';
 import { createMockChatSummary, createMockProductAnswer } from './ai.service.js';
 
 const softKnit: Product = {
@@ -32,6 +33,37 @@ describe('createMockProductAnswer', () => {
       needsHumanReview: true,
       sourceIds: ['product.description'],
     });
+  });
+});
+
+describe('evaluateProductAnswerFixtures', () => {
+  it('reports schema, source, and human review checks for every curated fixture', () => {
+    const report = evaluateProductAnswerFixtures(createMockProductAnswer);
+
+    expect(report).toMatchObject({
+      provider: 'mock',
+      modelOrMockVersion: 'mock-product-answer-v1',
+      totalCases: 20,
+      passedCaseCount: 20,
+      schemaValidCaseCount: 20,
+      sourceMatchedCaseCount: 20,
+      humanReviewMatchedCaseCount: 20,
+      failureCounts: [],
+    });
+  });
+
+  it('records an invalid response as a failed schema evaluation', () => {
+    const report = evaluateProductAnswerFixtures(() => ({ answer: '' }));
+    const firstCase = report.cases[0];
+
+    expect(firstCase).toMatchObject({
+      schemaValid: false,
+      sourceMatched: false,
+      humanReviewMatched: false,
+      passed: false,
+      failureTypes: ['SCHEMA_INVALID', 'SOURCE_MISMATCH', 'HUMAN_REVIEW_MISMATCH'],
+    });
+    expect(report.failureCounts).toContainEqual({ type: 'SCHEMA_INVALID', count: 20 });
   });
 });
 

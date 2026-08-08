@@ -2428,8 +2428,16 @@ export const prismaLiveRepository: LiveRepository = {
       const sourceLive = await transaction.liveSession.findUnique({
         where: { id: sourceLiveId },
         select: {
-          featuredProductId: true,
+          description: true,
+          liveProducts: {
+            orderBy: { displayOrder: 'asc' },
+            select: {
+              displayOrder: true,
+              productId: true,
+            },
+          },
           status: true,
+          thumbnailUrl: true,
           title: true,
         },
       });
@@ -2446,8 +2454,15 @@ export const prismaLiveRepository: LiveRepository = {
         data: {
           chatRoom: { create: {} },
           createdById: actorId,
-          featuredProductId: sourceLive.featuredProductId,
-          status: 'READY',
+          description: sourceLive.description,
+          liveProducts: {
+            create: sourceLive.liveProducts.map((liveProduct) => ({
+              displayOrder: liveProduct.displayOrder,
+              productId: liveProduct.productId,
+            })),
+          },
+          status: 'DRAFT',
+          thumbnailUrl: sourceLive.thumbnailUrl,
           title: sourceLive.title,
         },
         select: {
@@ -2465,7 +2480,7 @@ export const prismaLiveRepository: LiveRepository = {
           action: 'LIVE_SESSION_CREATED',
           actorId,
           afterJson: {
-            featuredProductId: sourceLive.featuredProductId,
+            copiedProductCount: sourceLive.liveProducts.length,
             status: live.status,
           },
           beforeJson: { sourceLiveId },

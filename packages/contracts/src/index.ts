@@ -540,6 +540,56 @@ export const aiProductAnswerSchema = z.object({
 });
 export type AiProductAnswer = z.infer<typeof aiProductAnswerSchema>;
 
+export const aiProductAnswerEvaluationFailureTypeSchema = z.enum([
+  'SCHEMA_INVALID',
+  'SOURCE_MISMATCH',
+  'HUMAN_REVIEW_MISMATCH',
+  'FORBIDDEN_CLAIM',
+]);
+export type AiProductAnswerEvaluationFailureType = z.infer<
+  typeof aiProductAnswerEvaluationFailureTypeSchema
+>;
+
+export const aiProductAnswerEvaluationCaseSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  expectedSourceIds: z.array(z.string().min(1)).min(1),
+  actualSourceIds: z.array(z.string().min(1)),
+  expectedNeedsHumanReview: z.boolean(),
+  actualNeedsHumanReview: z.boolean().nullable(),
+  schemaValid: z.boolean(),
+  sourceMatched: z.boolean(),
+  humanReviewMatched: z.boolean(),
+  forbiddenClaims: z.array(z.string().min(1)),
+  failureTypes: z.array(aiProductAnswerEvaluationFailureTypeSchema),
+  passed: z.boolean(),
+  responseTimeMs: z.int().nonnegative(),
+});
+export type AiProductAnswerEvaluationCase = z.infer<typeof aiProductAnswerEvaluationCaseSchema>;
+
+export const aiProductAnswerEvaluationFailureCountSchema = z.object({
+  type: aiProductAnswerEvaluationFailureTypeSchema,
+  count: z.int().positive(),
+});
+export type AiProductAnswerEvaluationFailureCount = z.infer<
+  typeof aiProductAnswerEvaluationFailureCountSchema
+>;
+
+export const aiProductAnswerEvaluationReportSchema = z.object({
+  provider: z.string().min(1),
+  modelOrMockVersion: z.string().min(1),
+  evaluatedAt: z.iso.datetime(),
+  totalCases: z.int().positive(),
+  passedCaseCount: z.int().nonnegative(),
+  schemaValidCaseCount: z.int().nonnegative(),
+  sourceMatchedCaseCount: z.int().nonnegative(),
+  humanReviewMatchedCaseCount: z.int().nonnegative(),
+  averageResponseTimeMs: z.int().nonnegative(),
+  failureCounts: z.array(aiProductAnswerEvaluationFailureCountSchema),
+  cases: z.array(aiProductAnswerEvaluationCaseSchema).min(1),
+});
+export type AiProductAnswerEvaluationReport = z.infer<typeof aiProductAnswerEvaluationReportSchema>;
+
 export const liveJoinRequestSchema = z.object({
   liveId: liveIdSchema,
   lastEventSequence: z.int().nonnegative(),

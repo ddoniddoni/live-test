@@ -154,6 +154,9 @@ export function AdminSidebar({
         <Link href="/admin/audit-logs">
           <span aria-hidden="true">◷</span> 감사 로그
         </Link>
+        <Link href="/admin/ai-evals">
+          <span aria-hidden="true">✦</span> AI 평가
+        </Link>
       </nav>
     </aside>
   );
@@ -227,7 +230,10 @@ export function AdminProductControl({
 
 type AdminBroadcastControlProps = {
   error: string | null;
+  isCreatingNextSession: boolean;
   isPending: boolean;
+  nextSessionError: string | null;
+  onCreateNextSession: () => void;
   onEnd: () => void;
   onStart: () => void;
   status: LiveSnapshot['live']['status'];
@@ -235,7 +241,10 @@ type AdminBroadcastControlProps = {
 
 export function AdminBroadcastControl({
   error,
+  isCreatingNextSession,
   isPending,
+  nextSessionError,
+  onCreateNextSession,
   onEnd,
   onStart,
   status,
@@ -246,15 +255,18 @@ export function AdminBroadcastControl({
     ? '방송을 시작하면 시청자 화면의 채팅과 주문이 활성화됩니다.'
     : isLive
       ? '방송을 종료하면 신규 시청자 채팅과 주문이 즉시 제한됩니다.'
-      : '이전 기록은 보존됩니다. 새 방송은 빈 채팅으로 준비됩니다.';
+      : '기본 정보와 판매 상품만 복제합니다. 채팅·쿠폰·주문·공지 기록은 복제하지 않습니다.';
 
   return (
     <section className="broadcast-control" aria-labelledby="broadcast-control-heading">
       <div>
         <p className="panel-kicker">BROADCAST CONTROL</p>
         <h2 id="broadcast-control-heading">방송 상태 제어</h2>
-        <p aria-live="polite" className={error ? 'form-error' : 'broadcast-control-status'}>
-          {error ?? statusMessage}
+        <p
+          aria-live="polite"
+          className={error || nextSessionError ? 'form-error' : 'broadcast-control-status'}
+        >
+          {error ?? nextSessionError ?? statusMessage}
         </p>
       </div>
       {isReady ? (
@@ -269,6 +281,15 @@ export function AdminBroadcastControl({
           type="button"
         >
           {isPending ? '방송 종료 중…' : '방송 종료'}
+        </button>
+      ) : status === 'ENDED' ? (
+        <button
+          className="broadcast-control-next"
+          disabled={isCreatingNextSession}
+          onClick={onCreateNextSession}
+          type="button"
+        >
+          {isCreatingNextSession ? '새 초안 만드는 중…' : '새 초안으로 복제'}
         </button>
       ) : (
         <Link className="broadcast-control-next" href="/admin/lives/new">

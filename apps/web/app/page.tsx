@@ -1,17 +1,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
+import { getHomeCatalogLives, homeCategories } from '@/lib/home-catalog';
 import { stitchAssets } from '@/lib/stitch-assets';
-
-const categories = [
-  { icon: '▦', label: '전체' },
-  { icon: '✦', label: '뷰티' },
-  { icon: '◫', label: '테크' },
-  { icon: '♧', label: '패션' },
-  { icon: '◒', label: '푸드' },
-  { icon: '⌂', label: '리빙' },
-  { icon: '◉', label: '스포츠' },
-] as const;
+import type { HomeCategoryId } from '@/lib/home-catalog';
 
 const liveCards = [
   {
@@ -75,6 +67,61 @@ const recommendations = [
 
 const currentLivePath = '/live';
 
+function CategoryIcon({ category }: { category: HomeCategoryId }) {
+  switch (category) {
+    case 'all':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <rect height="6" rx="1" width="6" x="4" y="4" />
+          <rect height="6" rx="1" width="6" x="14" y="4" />
+          <rect height="6" rx="1" width="6" x="4" y="14" />
+          <rect height="6" rx="1" width="6" x="14" y="14" />
+        </svg>
+      );
+    case 'beauty':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3z" />
+          <path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z" />
+        </svg>
+      );
+    case 'tech':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <rect height="16" rx="2" width="11" x="6.5" y="4" />
+          <path d="M10 17h4" />
+        </svg>
+      );
+    case 'fashion':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <path d="M8 5l4 2 4-2 4 4-3 3-1-1v8H8v-8l-1 1-3-3 4-4z" />
+          <path d="M10 5c0 1.3.8 2 2 2s2-.7 2-2" />
+        </svg>
+      );
+    case 'food':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10" />
+          <path d="M17 3c-2 2-3 4.6-3 7v4h3v7" />
+        </svg>
+      );
+    case 'living':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <path d="M4 11.5L12 5l8 6.5V20H4v-8.5z" />
+          <path d="M10 20v-5h4v5" />
+        </svg>
+      );
+    case 'sport':
+      return (
+        <svg focusable="false" viewBox="0 0 24 24">
+          <path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" />
+        </svg>
+      );
+  }
+}
+
 export default function Home() {
   return (
     <main className="home-shell">
@@ -112,11 +159,16 @@ export default function Home() {
       </section>
 
       <section aria-label="카테고리" className="home-categories" id="categories">
-        {categories.map((category) => (
-          <a href="#live-now" key={category.label}>
-            <span aria-hidden="true">{category.icon}</span>
+        {homeCategories.map((category) => (
+          <Link
+            href={category.id === 'all' ? '#live-now' : `#category-${category.id}`}
+            key={category.id}
+          >
+            <span aria-hidden="true">
+              <CategoryIcon category={category.id} />
+            </span>
             {category.label}
-          </a>
+          </Link>
         ))}
       </section>
 
@@ -153,6 +205,51 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {homeCategories
+        .filter((category) => category.id !== 'all')
+        .map((category) => (
+          <section
+            aria-labelledby={`category-${category.id}-title`}
+            className="home-content-section home-category-section"
+            id={`category-${category.id}`}
+            key={category.id}
+          >
+            <div className="home-section-heading home-category-section-heading">
+              <div>
+                <p>{category.subtitle}</p>
+                <h2 id={`category-${category.id}-title`}>
+                  {category.label} 라이브 <span>LIVE</span>
+                </h2>
+              </div>
+              <a href="#categories">카테고리 보기 ↑</a>
+            </div>
+            <div className="home-category-live-grid">
+              {getHomeCatalogLives(category.id).map((live) => (
+                <Link
+                  aria-label={`${live.title} 라이브 보기`}
+                  className={`home-category-live-card is-${live.category}`}
+                  href={currentLivePath}
+                  key={live.id}
+                >
+                  <div className="home-category-live-thumbnail" aria-hidden="true">
+                    <span>LIVE / {live.category.toUpperCase()}</span>
+                    <strong>{live.thumbnail}</strong>
+                    <i>● ON AIR</i>
+                  </div>
+                  <div className="home-category-live-copy">
+                    <div>
+                      <span>LIVE NOW</span>
+                      <small>◉ {live.viewers}</small>
+                    </div>
+                    <h3>{live.title}</h3>
+                    <p>{live.creator}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ))}
 
       <section className="home-content-section home-bento" id="schedule">
         <article className="home-schedule-panel">

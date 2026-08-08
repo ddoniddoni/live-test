@@ -11,6 +11,7 @@ import {
   ApiRequestError,
   adminLiveListQueryKey,
   cancelLiveDraft,
+  createNextLiveSession,
   createLiveDraft,
   fetchAdminLives,
   updateLiveDraft,
@@ -21,6 +22,7 @@ import { LiveDraftForm } from './live-draft-form';
 type AdminLiveManagerProps = {
   accessToken: string;
   initialCreate?: boolean;
+  initialEditLiveId?: string;
 };
 
 const statusLabels: Record<AdminLiveSession['status'], string> = {
@@ -49,10 +51,14 @@ function getMutationError(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLiveManagerProps) {
+export function AdminLiveManager({
+  accessToken,
+  initialCreate = false,
+  initialEditLiveId,
+}: AdminLiveManagerProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [editingLive, setEditingLive] = useState<AdminLiveSession | null>(null);
+  const [editingLiveId, setEditingLiveId] = useState<string | null>(initialEditLiveId ?? null);
   const [isCreating, setIsCreating] = useState(initialCreate);
   const liveListQuery = useQuery({
     queryKey: adminLiveListQueryKey(),
@@ -69,14 +75,26 @@ export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLi
     mutationFn: ({ liveId, draft }: { liveId: string; draft: CreateLiveDraftRequest }) =>
       updateLiveDraft(liveId, draft, accessToken),
     onSuccess: () => {
-      setEditingLive(null);
+      setEditingLiveId(null);
       void queryClient.invalidateQueries({ queryKey: adminLiveListQueryKey() });
+      router.replace('/admin/lives');
     },
   });
   const cancelMutation = useMutation({
     mutationFn: (liveId: string) => cancelLiveDraft(liveId, accessToken),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: adminLiveListQueryKey() }),
   });
+  const createFromTemplateMutation = useMutation({
+    mutationFn: (sourceLiveId: string) => createNextLiveSession(sourceLiveId, accessToken),
+    onSuccess: async (live) => {
+      await queryClient.invalidateQueries({ queryKey: adminLiveListQueryKey() });
+      setEditingLiveId(live.id);
+      router.replace(`/admin/lives?edit=${live.id}`);
+    },
+  });
+  const editingLive = editingLiveId
+    ? (liveListQuery.data?.lives.find((live) => live.id === editingLiveId) ?? null)
+    : null;
 
   const activeForm = isCreating ? null : editingLive;
   const formError = createMutation.isError
@@ -90,10 +108,21 @@ export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLi
   const cancelError = cancelMutation.isError
     ? getMutationError(cancelMutation.error, '방송 초안을 취소하지 못했습니다. 다시 시도해 주세요.')
     : null;
+  const templateError = createFromTemplateMutation.isError
+    ? getMutationError(
+        createFromTemplateMutation.error,
+        '종료 방송을 새 초안으로 복제하지 못했습니다. 다시 시도해 주세요.',
+      )
+    : null;
 
   function closeForm(): void {
+    const isEditing = editingLiveId !== null;
     setIsCreating(false);
-    setEditingLive(null);
+    setEditingLiveId(null);
+
+    if (isEditing) {
+      router.replace('/admin/lives');
+    }
   }
 
   function submitDraft(draft: CreateLiveDraftRequest): void {
@@ -137,6 +166,9 @@ export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLi
           <Link className="admin-live-secondary-link" href="/admin/orders">
             주문 관리
           </Link>
+          <Link className="admin-live-secondary-link" href="/admin/ai-evals">
+            AI 평가
+          </Link>
           <Link className="admin-live-primary-link" href="/admin/lives/new">
             새 방송 만들기
           </Link>
@@ -163,6 +195,12 @@ export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLi
       {cancelError ? (
         <p className="admin-live-manager-error" role="alert">
           {cancelError}
+        </p>
+      ) : null}
+
+      {templateError ? (
+        <p className="admin-live-manager-error" role="alert">
+          {templateError}
         </p>
       ) : null}
 
@@ -219,8 +257,19 @@ export function AdminLiveManager({ accessToken, initialCreate = false }: AdminLi
                             : '컨트롤룸 열기'}
                       </Link>
                       {live.status === 'DRAFT' || live.status === 'SCHEDULED' ? (
-                        <button onClick={() => setEditingLive(live)} type="button">
+                        <button onClick={() => setEditingLiveId(live.id)} type="button">
                           기본 정보 수정
+                        </button>
+                      ) : null}
+                      {live.status === 'ENDED' ? (
+                        <button
+                          disabled={createFromTemplateMutation.isPending}
+                          onClick={() => createFromTemplateMutation.mutate(live.id)}
+                          type="button"
+                        >
+                          {createFromTemplateMutation.isPending
+                            ? '새 초안 만드는 중…'
+                            : '새 초안으로 복제'}
                         </button>
                       ) : null}
                       {live.status === 'DRAFT' ||
